@@ -20,11 +20,11 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
 ## Features
 - Per-key enable/disable.
 - 9-point positioning with offsets, on the active, primary, or all monitors.
-- Themeable colors, opacity, corner radius, padding, font, and a per-key accent
-  indicator dot. Follows the system light/dark theme and accent by default.
+- Three layouts (Pill, Tile, Minimal), themeable colors, opacity, corner radius,
+  padding, font, soft drop shadow, and an optional per-key accent state. Follows
+  the system light/dark theme and accent by default.
 - Optional fade animation and optional sound (system default or custom WAV).
-- Customizable text via a {key} / {state} template, plus editable labels and
-  key names.
+- Editable ON/OFF labels and per-key display names; optional key icon glyph.
 
 ## Notes
 - Runs in explorer.exe; notifications pause if Explorer is not running.
@@ -50,6 +50,12 @@ License: MIT.
 - notifyInsert: false
   $name: Notify on Insert
   $description: Reports the Insert toggle bit. Its meaning (overtype) is app-specific.
+- layout: pill
+  $name: Layout
+  $options:
+  - pill: Pill — name + state pill
+  - tile: Tile — icon tile + two lines
+  - minimal: Minimal — glyph + colored state word
 - durationMs: 1500
   $name: Display duration (ms)
 - monitor: active
@@ -95,7 +101,7 @@ License: MIT.
   $name: Height (px, when auto-size off)
 - padding: 16
   $name: Padding (px)
-- cornerRadius: 8
+- cornerRadius: 10
   $name: Corner radius (px)
 - backgroundColor: ""
   $name: Background color
@@ -118,8 +124,8 @@ License: MIT.
   $name: Bold text
 - fontItalic: false
   $name: Italic text
-- showIndicator: true
-  $name: Show state indicator dot
+- showIcon: false
+  $name: Show key icon glyph
 - capsAccentColor: ""
   $name: Caps Lock accent color
   $description: Hex. Blank uses the system accent color.
@@ -129,9 +135,6 @@ License: MIT.
   $name: Scroll Lock accent color
 - insertAccentColor: ""
   $name: Insert accent color
-- textTemplate: "{key}: {state}"
-  $name: Text template
-  $description: Use {key} and {state} placeholders.
 - labelOn: "ON"
   $name: ON label
 - labelOff: "OFF"
@@ -199,19 +202,6 @@ inline bool parseHexColor(const std::wstring& in, uint32_t& outArgb) {
     return true;
 }
 
-inline std::wstring formatTemplate(const std::wstring& tmpl,
-                                   const std::wstring& keyName,
-                                   const std::wstring& stateLabel) {
-    std::wstring out;
-    out.reserve(tmpl.size() + keyName.size() + stateLabel.size());
-    for (size_t i = 0; i < tmpl.size();) {
-        if (tmpl.compare(i, 5, L"{key}") == 0) { out += keyName; i += 5; }
-        else if (tmpl.compare(i, 7, L"{state}") == 0) { out += stateLabel; i += 7; }
-        else { out += tmpl[i]; ++i; }
-    }
-    return out;
-}
-
 inline RECT computeToastRect(Anchor a, SIZE size, int offsetX, int offsetY, const RECT& wa) {
     int idx = static_cast<int>(a);
     int col = idx % 3;   // 0 left, 1 center, 2 right
@@ -255,9 +245,10 @@ struct Settings {
     std::wstring fontFamily;
     int fontSize;
     bool fontBold, fontItalic;
-    bool showIndicator;
+    bool showIcon;
+    ToastLayout layout;
     std::wstring capsAccent, numAccent, scrollAccent, insertAccent;
-    std::wstring textTemplate, labelOn, labelOff;
+    std::wstring labelOn, labelOff;
     std::wstring nameCaps, nameNum, nameScroll, nameInsert;
 };
 
@@ -342,12 +333,12 @@ void LoadSettings() {
     s.fontSize     = Wh_GetIntSetting(L"fontSize");
     s.fontBold     = Wh_GetIntSetting(L"fontBold");
     s.fontItalic   = Wh_GetIntSetting(L"fontItalic");
-    s.showIndicator = Wh_GetIntSetting(L"showIndicator");
+    s.layout   = parseLayout(GetStr(L"layout"));
+    s.showIcon = Wh_GetIntSetting(L"showIcon");
     s.capsAccent   = GetStr(L"capsAccentColor");
     s.numAccent    = GetStr(L"numAccentColor");
     s.scrollAccent = GetStr(L"scrollAccentColor");
     s.insertAccent = GetStr(L"insertAccentColor");
-    s.textTemplate = GetStr(L"textTemplate");
     s.labelOn      = GetStr(L"labelOn");
     s.labelOff     = GetStr(L"labelOff");
     s.nameCaps     = GetStr(L"nameCaps");
@@ -377,6 +368,7 @@ struct ToastWindow {
     HBITMAP dib = nullptr;   // premultiplied ARGB DIB
     void* bits = nullptr;
     RECT area{};             // work area this toast was last presented on (for timer repositioning)
+    int  margin = 0;         // shadow margin baked into the DIB on each side
 };
 
 static std::vector<ToastWindow> g_toasts;   // index 0 for active/primary; one per monitor for "all"
@@ -411,72 +403,201 @@ static const std::wstring& KeyAccent(const Settings& s, int ki) {
     }
 }
 
+static const wchar_t* KeyGlyph(int ki) {
+    switch (ki) {
+        case KI_Caps:   return L"⇪"; // caps lock symbol
+        case KI_Num:    return L"#";
+        case KI_Scroll: return L"⤓"; // downwards arrow to bar
+        default:        return L"⎀"; // insertion symbol
+    }
+}
+
+static Color ToGdiColor(uint32_t a) {
+    return Color((a >> 24) & 0xFF, (a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF);
+}
+
+static void BuildRoundedRectPath(GraphicsPath& path, const RectF& rc, REAL radius) {
+    if (radius <= 0) { path.AddRectangle(rc); return; }
+    REAL d = radius * 2;
+    path.AddArc(rc.X, rc.Y, d, d, 180.0f, 90.0f);
+    path.AddArc(rc.X + rc.Width - d, rc.Y, d, d, 270.0f, 90.0f);
+    path.AddArc(rc.X + rc.Width - d, rc.Y + rc.Height - d, d, d, 0.0f, 90.0f);
+    path.AddArc(rc.X, rc.Y + rc.Height - d, d, d, 90.0f, 90.0f);
+    path.CloseFigure();
+}
+
+struct PillColors { Color fill; Color border; Color text; };
+
+// ON: a translucent tint of the accent with a legible (lightened-on-dark) text.
+// OFF: a calm neutral gray, theme-aware. Never red.
+static PillColors MakePillColors(uint32_t baseAccent, bool isOn, bool light) {
+    BYTE r = (baseAccent >> 16) & 0xFF, g = (baseAccent >> 8) & 0xFF, b = baseAccent & 0xFF;
+    if (isOn) {
+        BYTE tr = light ? r : (BYTE)(r + (255 - r) * 40 / 100);
+        BYTE tg = light ? g : (BYTE)(g + (255 - g) * 40 / 100);
+        BYTE tb = light ? b : (BYTE)(b + (255 - b) * 40 / 100);
+        return { Color(46, r, g, b), Color(110, r, g, b), Color(255, tr, tg, tb) };
+    }
+    if (light) return { Color(14, 0, 0, 0),       Color(34, 0, 0, 0),       Color(170, 70, 70, 70) };
+    return       { Color(16, 255, 255, 255), Color(30, 255, 255, 255), Color(200, 170, 170, 170) };
+}
+
+// Soft drop shadow: stack translucent rounded rects, densest near the surface,
+// fading outward. The surface (drawn opaque afterward) covers the inner buildup,
+// so only the protruding ring shows.
+static void DrawShadow(Graphics& g, const RectF& surface, REAL radius) {
+    const int  layers = 14;
+    const REAL spread = 13.0f;   // how far the shadow bleeds past the surface
+    const REAL dy     = 4.0f;    // downward offset
+    for (int i = layers; i >= 1; --i) {
+        REAL t = (REAL)i / layers;
+        REAL inflate = spread * t;
+        RectF sr(surface.X - inflate, surface.Y - inflate + dy,
+                 surface.Width + inflate * 2, surface.Height + inflate * 2);
+        GraphicsPath sp;
+        BuildRoundedRectPath(sp, sr, radius + inflate);
+        SolidBrush sb(Color(10, 0, 0, 0));
+        g.FillPath(&sb, &sp);
+    }
+}
+
+struct ToastCtx {
+    bool light, isOn;
+    uint32_t fg;          // opaque name/glyph text color
+    uint32_t acc;         // ON base accent color
+    std::wstring name, state;
+    const wchar_t* glyph;
+    bool showGlyph;
+    int fontSize, padding;
+    const Font* fontName;
+    const Font* fontState;
+    const Font* fontGlyph;
+};
+
+// Returns the surface size (content + padding) for the Pill layout.
+static SIZE MeasurePill(Graphics& g, const ToastCtx& c) {
+    const REAL gap = 8.0f, pillPadX = 11.0f, pillPadY = 4.0f;
+    REAL glyphW = 0, glyphH = 0;
+    if (c.showGlyph) {
+        RectF b; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &b);
+        glyphW = b.Width; glyphH = b.Height;
+    }
+    RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName,  PointF(0, 0), &nb);
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
+    REAL pillW = sb.Width + pillPadX * 2, pillH = sb.Height + pillPadY * 2;
+    REAL contentW = (c.showGlyph ? glyphW + gap : 0) + nb.Width + gap + pillW;
+    REAL contentH = (nb.Height > glyphH ? nb.Height : glyphH) > pillH ? (nb.Height > glyphH ? nb.Height : glyphH) : pillH;
+    return SIZE{ (int)(contentW + c.padding * 2 + 0.5f),
+                 (int)(contentH + c.padding * 2 + 0.5f) };
+}
+
+static void DrawPill(Graphics& g, const ToastCtx& c, const RectF& surface) {
+    const REAL gap = 8.0f, pillPadX = 11.0f, pillPadY = 4.0f;
+    REAL x = surface.X + c.padding;
+    REAL cy = surface.Y + surface.Height / 2;
+    StringFormat leftFmt; leftFmt.SetAlignment(StringAlignmentNear); leftFmt.SetLineAlignment(StringAlignmentCenter);
+
+    if (c.showGlyph) {
+        RectF gb; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &gb);
+        RectF lay(x, surface.Y, gb.Width + 1, surface.Height);
+        SolidBrush br(ToGdiColor(c.fg));
+        g.DrawString(c.glyph, -1, c.fontGlyph, lay, &leftFmt, &br);
+        x += gb.Width + gap;
+    }
+
+    RectF nb; g.MeasureString(c.name.c_str(), -1, c.fontName, PointF(0, 0), &nb);
+    {
+        RectF lay(x, surface.Y, nb.Width + 1, surface.Height);
+        SolidBrush br(ToGdiColor(c.fg));
+        g.DrawString(c.name.c_str(), -1, c.fontName, lay, &leftFmt, &br);
+        x += nb.Width + gap;
+    }
+
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
+    REAL pillW = sb.Width + pillPadX * 2, pillH = sb.Height + pillPadY * 2;
+    RectF pill(x, cy - pillH / 2, pillW, pillH);
+    PillColors pc = MakePillColors(c.acc, c.isOn, c.light);
+    GraphicsPath pp; BuildRoundedRectPath(pp, pill, pillH / 2);
+    SolidBrush pf(pc.fill); g.FillPath(&pf, &pp);
+    Pen pe(pc.border, 1.0f);  g.DrawPath(&pe, &pp);
+    StringFormat center; center.SetAlignment(StringAlignmentCenter); center.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush pt(pc.text); g.DrawString(c.state.c_str(), -1, c.fontState, pill, &center, &pt);
+}
+
 // Render the toast for (keyIndex, isOn) into tw.dib; sets tw.size. Returns false on failure.
 static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn) {
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
-    int padding = s.padding < 0 ? 0 : s.padding;
+    int padding  = s.padding  < 0 ? 0 : s.padding;
     int cornerRadius = s.cornerRadius < 0 ? 0 : s.cornerRadius;
+    const int margin = 16; // shadow margin on each side
+
     bool light = SystemUsesLightTheme();
     uint32_t themeBg   = light ? 0xFFFFFFFFu : 0xFF202020u;
     uint32_t themeText = light ? 0xFF000000u : 0xFFFFFFFFu;
     uint32_t accent    = SystemAccentArgb();
 
-    uint32_t bg     = ResolveColor(s.backgroundColor, themeBg);
-    uint32_t fg     = ResolveColor(s.textColor, themeText);
-    uint32_t acc    = ResolveColor(KeyAccent(s, keyIndex), accent);
-    bool hasBorder  = s.borderThickness > 0;
-    uint32_t border = ResolveColor(s.borderColor, accent);
+    uint32_t bg  = ResolveColor(s.backgroundColor, themeBg);
+    uint32_t fg  = 0xFF000000u | (ResolveColor(s.textColor, themeText) & 0x00FFFFFFu);
+    uint32_t acc = ResolveColor(KeyAccent(s, keyIndex), accent);
 
-    // Apply background opacity (0..100) to the background alpha.
-    int bgA = ((bg >> 24) & 0xFF) * (s.backgroundOpacity < 0 ? 0 : s.backgroundOpacity > 100 ? 100 : s.backgroundOpacity) / 100;
+    int op = s.backgroundOpacity < 0 ? 0 : s.backgroundOpacity > 100 ? 100 : s.backgroundOpacity;
+    int bgA = ((bg >> 24) & 0xFF) * op / 100;
     bg = (uint32_t(bgA) << 24) | (bg & 0x00FFFFFFu);
 
-    std::wstring text = formatTemplate(s.textTemplate, KeyName(s, keyIndex), isOn ? s.labelOn : s.labelOff);
+    bool hasBorder = s.borderThickness > 0;
+    REAL borderW   = hasBorder ? (REAL)s.borderThickness : 1.0f;
+    uint32_t borderCol = hasBorder ? ResolveColor(s.borderColor, accent)
+                                   : (light ? 0x14000000u : 0x20FFFFFFu);
 
-    // Build font.
+    // Fonts.
     int style = (s.fontBold ? FontStyleBold : 0) | (s.fontItalic ? FontStyleItalic : 0);
     FontFamily ff(s.fontFamily.c_str());
     FontFamily def(L"Segoe UI");
     const FontFamily* useFf = ff.IsAvailable() ? &ff : &def;
-    Font font(useFf, (REAL)fontSize, style, UnitPixel);
+    Font fontName(useFf, (REAL)fontSize, style, UnitPixel);
+    REAL stateSize = (REAL)fontSize * 0.5f; if (stateSize < 11.0f) stateSize = 11.0f;
+    Font fontState(useFf, stateSize, FontStyleBold, UnitPixel);
+    Font fontGlyph(useFf, (REAL)fontSize * 0.9f, style, UnitPixel);
 
-    // Measure text using a scratch graphics.
-    int dotW = s.showIndicator ? (fontSize / 2 + 8) : 0;
-    REAL textW = 0, textH = 0;
+    ToastCtx c{};
+    c.light = light; c.isOn = isOn; c.fg = fg; c.acc = acc;
+    c.name = KeyName(s, keyIndex);
+    c.state = isOn ? s.labelOn : s.labelOff;
+    c.glyph = KeyGlyph(keyIndex);
+    c.showGlyph = s.showIcon;
+    c.fontSize = fontSize; c.padding = padding;
+    c.fontName = &fontName; c.fontState = &fontState; c.fontGlyph = &fontGlyph;
+
+    // Measure surface size (Tile/Minimal specialize in later tasks; Pill is the default).
+    SIZE surf;
     {
         HDC screen = GetDC(nullptr);
         Graphics g(screen);
         g.SetTextRenderingHint(TextRenderingHintAntiAlias);
-        RectF bounds;
-        g.MeasureString(text.c_str(), -1, &font, PointF(0, 0), &bounds);
-        textW = bounds.Width; textH = bounds.Height;
+        if (s.autoSize) surf = MeasurePill(g, c);
+        else            surf = SIZE{ s.width, s.height };
         ReleaseDC(nullptr, screen);
     }
+    if (surf.cx < 1) surf.cx = 1;
+    if (surf.cy < 1) surf.cy = 1;
 
-    int w, h;
-    if (s.autoSize) {
-        w = (int)(textW + 0.5f) + dotW + padding * 2;
-        h = (int)(textH + 0.5f) + padding * 2;
-    } else {
-        w = s.width; h = s.height;
-    }
-    if (w < 1) w = 1;
-    if (h < 1) h = 1;
+    int dibW = surf.cx + margin * 2;
+    int dibH = surf.cy + margin * 2;
 
-    // (Re)create the DIB if size changed.
-    if (tw.size.cx != w || tw.size.cy != h || !tw.dib) {
+    if (tw.size.cx != dibW || tw.size.cy != dibH || !tw.dib) {
         if (tw.dib) { DeleteObject(tw.dib); tw.dib = nullptr; tw.bits = nullptr; }
         BITMAPINFO bmi{};
         bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth = w;
-        bmi.bmiHeader.biHeight = -h;        // top-down
+        bmi.bmiHeader.biWidth = dibW;
+        bmi.bmiHeader.biHeight = -dibH;     // top-down
         bmi.bmiHeader.biPlanes = 1;
         bmi.bmiHeader.biBitCount = 32;
         bmi.bmiHeader.biCompression = BI_RGB;
         tw.dib = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &tw.bits, nullptr, 0);
         if (!tw.dib) return false;
-        tw.size = SIZE{ w, h };
+        tw.size = SIZE{ dibW, dibH };
     }
+    tw.margin = margin;
 
     HDC memDC = CreateCompatibleDC(nullptr);
     HGDIOBJ oldBmp = SelectObject(memDC, tw.dib);
@@ -486,53 +607,27 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         g.SetTextRenderingHint(TextRenderingHintAntiAlias);
         g.Clear(Color(0, 0, 0, 0));
 
+        RectF surface((REAL)margin + 0.5f, (REAL)margin + 0.5f,
+                      (REAL)surf.cx - 1.0f, (REAL)surf.cy - 1.0f);
         REAL radius = (REAL)cornerRadius;
-        REAL d = radius * 2;
-        RectF rc(0.5f, 0.5f, (REAL)w - 1.0f, (REAL)h - 1.0f);
+
+        DrawShadow(g, surface, radius);
+
         GraphicsPath path;
-        if (radius > 0) {
-            path.AddArc(rc.X, rc.Y, d, d, 180.0f, 90.0f);
-            path.AddArc(rc.X + rc.Width - d, rc.Y, d, d, 270.0f, 90.0f);
-            path.AddArc(rc.X + rc.Width - d, rc.Y + rc.Height - d, d, d, 0.0f, 90.0f);
-            path.AddArc(rc.X, rc.Y + rc.Height - d, d, d, 90.0f, 90.0f);
-            path.CloseFigure();
-        } else {
-            path.AddRectangle(rc);
-        }
-
-        auto toColor = [](uint32_t a) { return Color((a >> 24) & 0xFF, (a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF); };
-        SolidBrush bgBrush(toColor(bg));
+        BuildRoundedRectPath(path, surface, radius);
+        SolidBrush bgBrush(ToGdiColor(bg));
         g.FillPath(&bgBrush, &path);
-        if (hasBorder) {
-            Pen pen(toColor(border), (REAL)s.borderThickness);
-            g.DrawPath(&pen, &path);
-        }
+        Pen borderPen(ToGdiColor(borderCol), borderW);
+        g.DrawPath(&borderPen, &path);
 
-        REAL textLeft = (REAL)padding;
-        if (s.showIndicator) {
-            REAL dia = (REAL)fontSize / 2;
-            REAL cx = (REAL)padding;
-            REAL cy = ((REAL)h - dia) / 2;
-            Color onColor = toColor(acc);
-            Color offColor(0xFF, 0x80, 0x80, 0x80);
-            SolidBrush dotBrush(isOn ? onColor : offColor);
-            g.FillEllipse(&dotBrush, cx, cy, dia, dia);
-            textLeft = cx + dia + 8;
-        }
-
-        SolidBrush textBrush(toColor(0xFF000000u | (fg & 0x00FFFFFFu)));
-        StringFormat fmt;
-        fmt.SetLineAlignment(StringAlignmentCenter);
-        fmt.SetAlignment(StringAlignmentNear);
-        RectF layout(textLeft, 0, (REAL)w - textLeft - padding, (REAL)h);
-        g.DrawString(text.c_str(), -1, &font, layout, &fmt, &textBrush);
+        DrawPill(g, c, surface);
     }
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
 
     // Premultiply alpha for UpdateLayeredWindow.
     uint8_t* px = (uint8_t*)tw.bits;
-    for (int i = 0; i < w * h; ++i) {
+    for (int i = 0; i < dibW * dibH; ++i) {
         uint8_t a = px[i * 4 + 3];
         px[i * 4 + 0] = (uint8_t)(px[i * 4 + 0] * a / 255);
         px[i * 4 + 1] = (uint8_t)(px[i * 4 + 1] * a / 255);
@@ -568,8 +663,9 @@ static BOOL CALLBACK EnumMonProc(HMONITOR hm, HDC, LPRECT, LPARAM lp) {
 
 // Present a rendered toast window at the work area; applies fade phase alpha.
 static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& s) {
-    RECT r = computeToastRect(s.anchor, tw.size, s.offsetX, s.offsetY, workArea);
-    POINT ptPos{ r.left, r.top };
+    SIZE surfaceSize{ tw.size.cx - tw.margin * 2, tw.size.cy - tw.margin * 2 };
+    RECT r = computeToastRect(s.anchor, surfaceSize, s.offsetX, s.offsetY, workArea);
+    POINT ptPos{ r.left - tw.margin, r.top - tw.margin };
     SIZE szWnd{ tw.size.cx, tw.size.cy };
     POINT ptSrc{ 0, 0 };
 

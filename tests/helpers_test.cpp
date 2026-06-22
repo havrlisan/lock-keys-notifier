@@ -15,11 +15,6 @@ int main() {
     CHECK(!parseHexColor(L"nothex", c));                        // invalid -> false
     CHECK(!parseHexColor(L"#12345", c));                        // bad length -> false
 
-    // formatTemplate
-    CHECK(formatTemplate(L"{key}: {state}", L"Caps Lock", L"ON") == L"Caps Lock: ON");
-    CHECK(formatTemplate(L"{state} {key} {state}", L"Num", L"OFF") == L"OFF Num OFF");
-    CHECK(formatTemplate(L"no placeholders", L"X", L"Y") == L"no placeholders");
-
     // parseLayout
     CHECK(parseLayout(L"pill") == ToastLayout::Pill);
     CHECK(parseLayout(L"tile") == ToastLayout::Tile);
