@@ -524,6 +524,49 @@ static void DrawPill(Graphics& g, const ToastCtx& c, const RectF& surface) {
     SolidBrush pt(pc.text); g.DrawString(c.state.c_str(), -1, c.fontState, pill, &center, &pt);
 }
 
+// Tile always shows its icon tile (the defining element), regardless of showIcon.
+static SIZE MeasureTile(Graphics& g, const ToastCtx& c) {
+    const REAL gap = 12.0f, lineGap = 2.0f;
+    REAL tile = (REAL)c.fontSize * 1.6f;
+    RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName,  PointF(0, 0), &nb);
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
+    REAL textW = (nb.Width > sb.Width ? nb.Width : sb.Width);
+    REAL textH = nb.Height + lineGap + sb.Height;
+    REAL contentW = tile + gap + textW;
+    REAL contentH = (tile > textH ? tile : textH);
+    return SIZE{ (int)(contentW + c.padding * 2 + 0.5f),
+                 (int)(contentH + c.padding * 2 + 0.5f) };
+}
+
+static void DrawTile(Graphics& g, const ToastCtx& c, const RectF& surface) {
+    const REAL gap = 12.0f, lineGap = 2.0f;
+    REAL tile = (REAL)c.fontSize * 1.6f;
+    PillColors tc = MakePillColors(c.acc, c.isOn, c.light);
+
+    RectF tileRc(surface.X + c.padding,
+                 surface.Y + (surface.Height - tile) / 2, tile, tile);
+    GraphicsPath tp; BuildRoundedRectPath(tp, tileRc, tile * 0.22f);
+    SolidBrush tf(tc.fill); g.FillPath(&tf, &tp);
+    Pen te(tc.border, 1.0f); g.DrawPath(&te, &tp);
+
+    StringFormat center; center.SetAlignment(StringAlignmentCenter); center.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush gbr(c.isOn ? tc.text : ToGdiColor(c.fg));
+    g.DrawString(c.glyph, -1, c.fontGlyph, tileRc, &center, &gbr);
+
+    RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName,  PointF(0, 0), &nb);
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
+    REAL textH = nb.Height + lineGap + sb.Height;
+    REAL tx = tileRc.X + tile + gap;
+    REAL ty = surface.Y + (surface.Height - textH) / 2;
+    StringFormat leftFmt; leftFmt.SetAlignment(StringAlignmentNear); leftFmt.SetLineAlignment(StringAlignmentNear);
+
+    SolidBrush nbr(ToGdiColor(c.fg));
+    g.DrawString(c.name.c_str(), -1, c.fontName, RectF(tx, ty, nb.Width + 2, nb.Height + 2), &leftFmt, &nbr);
+    SolidBrush sbr(tc.text);
+    g.DrawString(c.state.c_str(), -1, c.fontState,
+                 RectF(tx, ty + nb.Height + lineGap, sb.Width + 2, sb.Height + 2), &leftFmt, &sbr);
+}
+
 // Render the toast for (keyIndex, isOn) into tw.dib; sets tw.size. Returns false on failure.
 static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn) {
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
@@ -574,8 +617,11 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         HDC screen = GetDC(nullptr);
         Graphics g(screen);
         g.SetTextRenderingHint(TextRenderingHintAntiAlias);
-        if (s.autoSize) surf = MeasurePill(g, c);
-        else            surf = SIZE{ s.width, s.height };
+        if (s.autoSize) {
+            surf = (s.layout == ToastLayout::Tile) ? MeasureTile(g, c) : MeasurePill(g, c);
+        } else {
+            surf = SIZE{ s.width, s.height };
+        }
         ReleaseDC(nullptr, screen);
     }
     if (surf.cx < 1) surf.cx = 1;
@@ -620,7 +666,8 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         Pen borderPen(ToGdiColor(borderCol), borderW);
         g.DrawPath(&borderPen, &path);
 
-        DrawPill(g, c, surface);
+        if (s.layout == ToastLayout::Tile) DrawTile(g, c, surface);
+        else                               DrawPill(g, c, surface);
     }
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
