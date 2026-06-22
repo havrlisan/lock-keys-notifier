@@ -14,7 +14,7 @@ To keep the pure logic testable despite that constraint, the file contains a del
 
 ```
 // === HELPERS BEGIN === (pure: no Windhawk/GDI deps; extracted for tests)
-...Anchor enum, parseHexColor, formatTemplate, computeToastRect...
+...Anchor enum, parseHexColor, parseLayout, computeToastRect...
 // === HELPERS END ===
 ```
 

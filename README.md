@@ -11,12 +11,11 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 - Per-key enable/disable (ignore the keys you don't care about).
 - 9-point positioning with X/Y offsets, on the active, primary, or all monitors.
 - Fully themeable: background/text/border colors, opacity, corner radius,
-  padding, font family/size/bold/italic, optional per-key accent indicator dot.
+  padding, font family/size/bold/italic, and an optional per-key accent state pill.
 - Follows the system light/dark theme and accent color by default; any color is
   overridable with a hex value.
 - Optional fade animation and optional sound (system default or a custom WAV).
-- Customizable text via a `{key}` / `{state}` template plus editable labels and
-  key names.
+- Three layouts (Pill, Tile, Minimal); editable ON/OFF labels and key names,
 
 ## How it works
 
@@ -37,7 +36,7 @@ All options are configured from the Windhawk settings UI. Highlights:
 | Position + offsets | Bottom center, 0 / 48 | 9-point anchor + px offsets |
 | Colors | blank (theme) | Hex; blank follows system theme/accent |
 | Font | Segoe UI, 24px | Family, size, bold, italic |
-| Text template | `{key}: {state}` | Plus editable ON/OFF labels and key names |
+| Layout | `Pill` | Pill / Tile / Minimal; ON uses the system accent, OFF neutral |
 | Sound | None | None / System default / Custom WAV |
 
 ## Notes & caveats

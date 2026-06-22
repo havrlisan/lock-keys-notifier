@@ -655,7 +655,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     c.fontSize = fontSize; c.padding = padding;
     c.fontName = &fontName; c.fontState = &fontState; c.fontGlyph = &fontGlyph;
 
-    // Measure surface size (Tile/Minimal specialize in later tasks; Pill is the default).
+    // Measure surface size for the active layout (Pill is the default).
     SIZE surf;
     {
         HDC screen = GetDC(nullptr);
