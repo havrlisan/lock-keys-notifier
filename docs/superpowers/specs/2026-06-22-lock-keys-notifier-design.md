@@ -161,8 +161,10 @@ injected mod cannot be exercised by a normal unit-test harness:
 
 - **`lock-keys-notifier.wh.cpp`** — the mod. Contains:
   - `// ==WindhawkMod==` metadata block (id, name, description, version,
-    author, github, include = `explorer.exe`, architecture `x86-64` and `x86`,
-    `compilerOptions: -lgdiplus -ldwmapi -lgdi32 -luser32`).
+    author, github, include = `explorer.exe`, architecture `x86-64` only
+    (decided 2026-06-22: explorer.exe is 64-bit on modern Windows, so a 32-bit
+    build would never be used; x86 dropped as dead weight),
+    `compilerOptions: -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32`).
   - `// ==WindhawkModReadme==` block.
   - `// ==WindhawkModSettings==` block (all settings above, with `$name` /
     `$description` and `$options` for enums).
