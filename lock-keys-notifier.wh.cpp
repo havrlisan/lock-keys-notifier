@@ -348,6 +348,7 @@ struct ToastWindow {
     SIZE size{};             // last rendered size
     HBITMAP dib = nullptr;   // premultiplied ARGB DIB
     void* bits = nullptr;
+    RECT area{};             // work area this toast was last presented on (for timer repositioning)
 };
 
 static std::vector<ToastWindow> g_toasts;   // index 0 for active/primary; one per monitor for "all"
@@ -578,6 +579,7 @@ static void DoShow(int keyIndex, bool isOn) {
     for (size_t i = 0; i < g_toasts.size() && i < areas.size(); ++i) {
         ToastWindow& tw = g_toasts[i];
         if (!RenderToast(tw, s, keyIndex, isOn)) continue;
+        tw.area = areas[i];
         tw.alpha = s.fadeEnabled ? (tw.phase == 0 ? 0 : tw.alpha) : 255;
         tw.phase = s.fadeEnabled ? 1 : 2;
         PresentToast(tw, areas[i], s);
@@ -615,7 +617,7 @@ static LRESULT CALLBACK ToastWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         EnterCriticalSection(&g_settingsCs);
         s = g_settings;
         LeaveCriticalSection(&g_settingsCs);
-        RECT wa = WorkAreaForTarget(s.monitor); // best-effort for the timer reposition
+        RECT wa = tw->area;
         int stepMs = FADE_TICK_MS;
         int delta = s.fadeDurationMs > 0 ? (255 * stepMs / s.fadeDurationMs) : 255;
         if (delta < 1) delta = 1;
