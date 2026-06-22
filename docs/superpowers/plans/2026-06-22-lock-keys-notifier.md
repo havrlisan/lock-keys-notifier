@@ -725,11 +725,6 @@ static std::vector<ToastWindow> g_toasts;   // index 0 for active/primary; one p
 static DWORD  g_workerThreadId = 0;
 static HANDLE g_workerThread = nullptr;
 static ULONG_PTR g_gdiplusToken = 0;
-
-// Pending toast data set by RequestToast, consumed on the worker thread.
-static CRITICAL_SECTION g_pendingCs;
-static int  g_pendingKey = -1;
-static bool g_pendingOn = false;
 ```
 
 - [ ] **Step 2: Add color resolution + the renderer**
@@ -1095,8 +1090,6 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
             0, 0, 0, 0, nullptr, nullptr, hInst, nullptr);
     }
 
-    InitializeCriticalSection(&g_pendingCs);
-
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         if (msg.message == WM_APP_QUIT) break;
@@ -1109,7 +1102,6 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
         if (tw.dib) DeleteObject(tw.dib);
     }
     g_toasts.clear();
-    DeleteCriticalSection(&g_pendingCs);
     UnregisterClassW(kToastClass, hInst);
     GdiplusShutdown(g_gdiplusToken);
     return 0;
@@ -1266,7 +1258,7 @@ static void SeedKeyStates() {
 
 - [ ] **Step 2: Install/uninstall the real hook inside the worker thread**
 
-In `WorkerThreadProc`, after the window-creation loop and `InitializeCriticalSection(&g_pendingCs);`, add:
+In `WorkerThreadProc`, after the window-creation loop (just before `MSG msg;`), add:
 
 ```cpp
     SeedKeyStates();
