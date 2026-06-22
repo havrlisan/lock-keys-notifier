@@ -28,6 +28,10 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
 
 ## Notes
 - Runs in explorer.exe; notifications pause if Explorer is not running.
+- Toggles made while an elevated (administrator) app has focus are not detected.
+  Explorer runs at medium integrity and Windows (UIPI) blocks it from observing
+  input to higher-integrity windows; this can't be worked around from a mod. The
+  next toggle in a normal app shows the correct state.
 - Fullscreen exclusive apps may cover the toast.
 - Insert reports the OS toggle bit, not an app's overtype mode (off by default).
 
@@ -36,109 +40,111 @@ License: MIT.
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
-// - notifyCapsLock: true
-//   $name: Notify on Caps Lock
-// - notifyNumLock: true
-//   $name: Notify on Num Lock
-// - notifyScrollLock: true
-//   $name: Notify on Scroll Lock
-// - notifyInsert: false
-//   $name: Notify on Insert
-//   $description: Reports the Insert toggle bit. Its meaning (overtype) is app-specific.
-// - durationMs: 1500
-//   $name: Display duration (ms)
-// - monitor: active
-//   $name: Target monitor
-//   $options:
-//   - active: Active monitor
-//   - primary: Primary monitor
-//   - all: All monitors
-// - positionAnchor: bottom-center
-//   $name: Position
-//   $options:
-//   - top-left: Top left
-//   - top-center: Top center
-//   - top-right: Top right
-//   - middle-left: Middle left
-//   - center: Center
-//   - middle-right: Middle right
-//   - bottom-left: Bottom left
-//   - bottom-center: Bottom center
-//   - bottom-right: Bottom right
-// - offsetX: 0
-//   $name: Horizontal offset (px)
-// - offsetY: 48
-//   $name: Vertical offset (px)
-// - fadeEnabled: true
-//   $name: Fade animation
-// - fadeDurationMs: 150
-//   $name: Fade duration (ms)
-// - soundMode: none
-//   $name: Sound
-//   $options:
-//   - none: No sound
-//   - systemDefault: System default sound
-//   - custom: Custom WAV file
-// - soundFile: ""
-//   $name: Custom sound file
-//   $description: Path to a .wav file, used when Sound is set to Custom.
-// - autoSize: true
-//   $name: Auto-size to text
-// - width: 220
-//   $name: Width (px, when auto-size off)
-// - height: 64
-//   $name: Height (px, when auto-size off)
-// - padding: 16
-//   $name: Padding (px)
-// - cornerRadius: 8
-//   $name: Corner radius (px)
-// - backgroundColor: ""
-//   $name: Background color
-//   $description: Hex like #1e1e1e. Blank follows the system light/dark theme.
-// - backgroundOpacity: 90
-//   $name: Background opacity (0-100)
-// - textColor: ""
-//   $name: Text color
-//   $description: Hex. Blank follows the system theme.
-// - borderColor: ""
-//   $name: Border color
-//   $description: Hex. Blank means no border.
-// - borderThickness: 0
-//   $name: Border thickness (px)
-// - fontFamily: Segoe UI
-//   $name: Font family
-// - fontSize: 24
-//   $name: Font size (px)
-// - fontBold: false
-//   $name: Bold text
-// - fontItalic: false
-//   $name: Italic text
-// - showIndicator: true
-//   $name: Show state indicator dot
-// - capsAccentColor: ""
-//   $name: Caps Lock accent color
-//   $description: Hex. Blank uses the system accent color.
-// - numAccentColor: ""
-//   $name: Num Lock accent color
-// - scrollAccentColor: ""
-//   $name: Scroll Lock accent color
-// - insertAccentColor: ""
-//   $name: Insert accent color
-// - textTemplate: "{key}: {state}"
-//   $name: Text template
-//   $description: Use {key} and {state} placeholders.
-// - labelOn: "ON"
-//   $name: ON label
-// - labelOff: "OFF"
-//   $name: OFF label
-// - nameCaps: "Caps Lock"
-//   $name: Caps Lock display name
-// - nameNum: "Num Lock"
-//   $name: Num Lock display name
-// - nameScroll: "Scroll Lock"
-//   $name: Scroll Lock display name
-// - nameInsert: "Insert"
-//   $name: Insert display name
+/*
+- notifyCapsLock: true
+  $name: Notify on Caps Lock
+- notifyNumLock: true
+  $name: Notify on Num Lock
+- notifyScrollLock: true
+  $name: Notify on Scroll Lock
+- notifyInsert: false
+  $name: Notify on Insert
+  $description: Reports the Insert toggle bit. Its meaning (overtype) is app-specific.
+- durationMs: 1500
+  $name: Display duration (ms)
+- monitor: active
+  $name: Target monitor
+  $options:
+  - active: Active monitor
+  - primary: Primary monitor
+  - all: All monitors
+- positionAnchor: bottom-center
+  $name: Position
+  $options:
+  - top-left: Top left
+  - top-center: Top center
+  - top-right: Top right
+  - middle-left: Middle left
+  - center: Center
+  - middle-right: Middle right
+  - bottom-left: Bottom left
+  - bottom-center: Bottom center
+  - bottom-right: Bottom right
+- offsetX: 0
+  $name: Horizontal offset (px)
+- offsetY: 48
+  $name: Vertical offset (px)
+- fadeEnabled: true
+  $name: Fade animation
+- fadeDurationMs: 150
+  $name: Fade duration (ms)
+- soundMode: none
+  $name: Sound
+  $options:
+  - none: No sound
+  - systemDefault: System default sound
+  - custom: Custom WAV file
+- soundFile: ""
+  $name: Custom sound file
+  $description: Path to a .wav file, used when Sound is set to Custom.
+- autoSize: true
+  $name: Auto-size to text
+- width: 220
+  $name: Width (px, when auto-size off)
+- height: 64
+  $name: Height (px, when auto-size off)
+- padding: 16
+  $name: Padding (px)
+- cornerRadius: 8
+  $name: Corner radius (px)
+- backgroundColor: ""
+  $name: Background color
+  $description: Hex like #1e1e1e. Blank follows the system light/dark theme.
+- backgroundOpacity: 90
+  $name: Background opacity (0-100)
+- textColor: ""
+  $name: Text color
+  $description: Hex. Blank follows the system theme.
+- borderColor: ""
+  $name: Border color
+  $description: Hex. Blank means no border.
+- borderThickness: 0
+  $name: Border thickness (px)
+- fontFamily: Segoe UI
+  $name: Font family
+- fontSize: 24
+  $name: Font size (px)
+- fontBold: false
+  $name: Bold text
+- fontItalic: false
+  $name: Italic text
+- showIndicator: true
+  $name: Show state indicator dot
+- capsAccentColor: ""
+  $name: Caps Lock accent color
+  $description: Hex. Blank uses the system accent color.
+- numAccentColor: ""
+  $name: Num Lock accent color
+- scrollAccentColor: ""
+  $name: Scroll Lock accent color
+- insertAccentColor: ""
+  $name: Insert accent color
+- textTemplate: "{key}: {state}"
+  $name: Text template
+  $description: Use {key} and {state} placeholders.
+- labelOn: "ON"
+  $name: ON label
+- labelOff: "OFF"
+  $name: OFF label
+- nameCaps: "Caps Lock"
+  $name: Caps Lock display name
+- nameNum: "Num Lock"
+  $name: Num Lock display name
+- nameScroll: "Scroll Lock"
+  $name: Scroll Lock display name
+- nameInsert: "Insert"
+  $name: Insert display name
+*/
 // ==/WindhawkModSettings==
 
 #include <windows.h>
@@ -696,8 +702,6 @@ void RequestToast(int keyIndex, bool isOn) {
 }
 
 static const int kLockVk[KI_Count] = { VK_CAPITAL, VK_NUMLOCK, VK_SCROLL, VK_INSERT };
-static bool g_keyDown[KI_Count]  = { false, false, false, false };
-static bool g_keyState[KI_Count] = { false, false, false, false };
 static HHOOK g_realHook = nullptr;
 
 static bool KeyEnabled(const Settings& s, int ki) {
@@ -712,31 +716,25 @@ static bool KeyEnabled(const Settings& s, int ki) {
 static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code == HC_ACTION) {
         KBDLLHOOKSTRUCT* k = (KBDLLHOOKSTRUCT*)lParam;
-        bool down = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-        bool up   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
-        for (int i = 0; i < KI_Count; ++i) {
-            if ((int)k->vkCode != kLockVk[i]) continue;
-            if (down) {
-                if (!g_keyDown[i]) {            // down edge only (ignore auto-repeat)
-                    g_keyDown[i] = true;
-                    g_keyState[i] = !g_keyState[i];
-                    EnterCriticalSection(&g_settingsCs);
-                    bool enabled = KeyEnabled(g_settings, i);
-                    LeaveCriticalSection(&g_settingsCs);
-                    if (enabled) RequestToast(i, g_keyState[i]);
-                }
-            } else if (up) {
-                g_keyDown[i] = false;
+        bool up = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+        if (up) {
+            for (int i = 0; i < KI_Count; ++i) {
+                if ((int)k->vkCode != kLockVk[i]) continue;
+                // Read the live toggle bit on the key-up edge. The state is settled
+                // by release (the key-down read lags), and reading the real bit each
+                // time means a toggle we never saw (e.g. one made while an elevated
+                // app held focus, which UIPI hides from this hook) cannot desync what
+                // we display. One key-up per physical press also ignores auto-repeat.
+                bool isOn = (GetKeyState(kLockVk[i]) & 1) != 0;
+                EnterCriticalSection(&g_settingsCs);
+                bool enabled = KeyEnabled(g_settings, i);
+                LeaveCriticalSection(&g_settingsCs);
+                if (enabled) RequestToast(i, isOn);
+                break;
             }
-            break;
         }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
-}
-
-static void SeedKeyStates() {
-    for (int i = 0; i < KI_Count; ++i)
-        g_keyState[i] = (GetKeyState(kLockVk[i]) & 1) != 0;
 }
 
 static DWORD WINAPI WorkerThreadProc(LPVOID) {
@@ -761,11 +759,10 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
             0, 0, 0, 0, nullptr, nullptr, hInst, nullptr);
     }
 
-    SeedKeyStates();
     g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
 
-    // Invariant: SeedKeyStates + hook install run here, before the pump, so
-    // g_keyState/g_keyDown are only touched by this thread once events flow.
+    // Invariant: the hook installs here, before the pump, so its callback (which
+    // reads live key state via GetKeyState) only ever runs on this thread.
     g_hookInstalled = (g_realHook != nullptr);
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
     if (g_workerReady) SetEvent(g_workerReady);

@@ -46,18 +46,32 @@ configurable. The mod runs inside `explorer.exe`.
 
 ## 3. State Detection
 
-For each monitored virtual key, the LL hook reacts to the **key-down edge only**:
+For each monitored virtual key, the LL hook reacts to the **key-up edge**:
 
-1. Track a per-key "is physically down" flag. Ignore a key-down while the key is
-   already marked down (auto-repeat).
-2. On a genuine down edge, flip the mod's own tracked ON/OFF boolean for that key
-   and signal the UI thread to show the toast with the new state.
-3. On key-up, clear the per-key down flag.
+1. On key-up, read the key's live toggle state with `GetKeyState(VK_*) & 1` and
+   signal the UI thread to show the toast with that state.
 
-Initial state is seeded from `GetKeyState(VK_*) & 1` at init. Self-tracking
-avoids the race where `GetKeyState` on the hook thread can lag the actual toggle.
-Injected input (`SendInput` / `keybd_event`) also flows through the LL hook, so
-programmatic toggles are caught.
+Key-up rather than key-down is deliberate: the toggle bit has settled by the time
+the key is released, so reading it directly sidesteps the key-down `GetKeyState`
+lag (which is why an earlier design self-tracked a flipped boolean instead). One
+key-up fires per physical press, so auto-repeat needs no special handling, and no
+seeded/tracked state is kept. Reading the real bit every time also means a toggle
+the hook never observed — see the elevated-app limitation below — cannot leave the
+displayed state inverted; the next observed toggle reports the true state. Injected
+input (`SendInput` / `keybd_event`) also flows through the LL hook, so programmatic
+toggles are caught.
+
+**Elevated-app limitation (unfixable):** the hook lives in `explorer.exe` at
+**medium** integrity. Windows User Interface Privilege Isolation (UIPI) prevents a
+medium-integrity process from observing input directed at a **higher-integrity**
+(elevated / "run as administrator") window. So a lock-key toggle made while an
+elevated app holds keyboard focus does not reach the hook and shows no toast. This
+is not specific to LL hooks — `GetKeyState`/`GetAsyncKeyState` polling and Raw
+Input are blocked identically — and it cannot be worked around from a Windhawk mod:
+the only documented bypass is a **digitally signed binary with `uiAccess="true"`
+installed under a trusted path**, which a JIT-compiled mod DLL injected into
+explorer can never be. (Investigated against m417z's keyboard mods, the Windhawk
+injection model, and the standalone FluentFlyout app — all share this exact gap.)
 
 **Insert caveat:** the mod reports Insert's raw toggle bit. Its real meaning
 (overtype mode) is application-specific, so the displayed state is the OS toggle
@@ -176,6 +190,9 @@ injected mod cannot be exercised by a normal unit-test harness:
 
 - Runs in `explorer.exe`; if explorer is not running, notifications pause until it
   restarts.
+- Toggles made while an **elevated (administrator) app** holds keyboard focus are
+  not detected — a UIPI integrity-level limitation that cannot be worked around
+  from a mod (see §3). The next toggle in a normal app shows the correct state.
 - Fullscreen exclusive applications (some games) may cover the topmost toast.
 - Insert reports the OS toggle bit, not any application's overtype mode.
 
@@ -195,5 +212,8 @@ checklist**:
 8. Enable sound modes.
 9. Edit text template, labels, and key names; confirm substitution.
 10. Mash a lock key; confirm a single reused toast with a resetting timer.
+11. Toggle a lock key while an **elevated** app is focused: confirm no toast
+    (expected UIPI limitation). Then toggle again in a normal app and confirm the
+    state shown is correct (not inverted by the missed toggle).
 
 The pure helpers (§7) can be checked in isolation.

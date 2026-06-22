@@ -21,9 +21,9 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 ## How it works
 
 The mod runs inside `explorer.exe` and installs a global low-level keyboard hook
-on a dedicated thread. On each lock-key press it tracks the new toggle state and
-draws a click-through layered window. The window never steals focus and ignores
-mouse input.
+on a dedicated thread. On each lock-key release it reads the key's live toggle
+state and draws a click-through layered window. The window never steals focus and
+ignores mouse input.
 
 ## Settings
 
@@ -44,6 +44,13 @@ All options are configured from the Windhawk settings UI. Highlights:
 
 - The mod runs in `explorer.exe`. If Explorer is not running, notifications
   pause until it restarts.
+- **Toggles made while an app running as administrator (elevated) has keyboard
+  focus are not detected.** Explorer runs at medium integrity, and Windows
+  (User Interface Privilege Isolation) blocks a medium-integrity process from
+  observing input directed at a higher-integrity window — this affects every
+  input method (hooks, raw input, `GetKeyState`), so it can't be worked around
+  from a mod. The next toggle made in a normal app is detected with the correct
+  state. (Standalone tools like FluentFlyout share this exact limitation.)
 - Fullscreen exclusive applications (some games) may cover the topmost toast.
 - **Insert** reports the OS toggle bit, not any application's overtype mode,
   which is application-specific. It is off by default.
