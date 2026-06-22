@@ -428,14 +428,15 @@ static void BuildRoundedRectPath(GraphicsPath& path, const RectF& rc, REAL radiu
 
 struct PillColors { Color fill; Color border; Color text; };
 
-// ON: a translucent tint of the accent with a legible (lightened-on-dark) text.
+// ON: a translucent tint of the accent with legible text — lightened toward white
+// on dark themes, darkened on light themes, so a pale custom accent stays readable.
 // OFF: a calm neutral gray, theme-aware. Never red.
 static PillColors MakePillColors(uint32_t baseAccent, bool isOn, bool light) {
     BYTE r = (baseAccent >> 16) & 0xFF, g = (baseAccent >> 8) & 0xFF, b = baseAccent & 0xFF;
     if (isOn) {
-        BYTE tr = light ? r : (BYTE)(r + (255 - r) * 40 / 100);
-        BYTE tg = light ? g : (BYTE)(g + (255 - g) * 40 / 100);
-        BYTE tb = light ? b : (BYTE)(b + (255 - b) * 40 / 100);
+        BYTE tr = light ? (BYTE)(r * 60 / 100) : (BYTE)(r + (255 - r) * 40 / 100);
+        BYTE tg = light ? (BYTE)(g * 60 / 100) : (BYTE)(g + (255 - g) * 40 / 100);
+        BYTE tb = light ? (BYTE)(b * 60 / 100) : (BYTE)(b + (255 - b) * 40 / 100);
         return { Color(46, r, g, b), Color(110, r, g, b), Color(255, tr, tg, tb) };
     }
     if (light) return { Color(14, 0, 0, 0),       Color(34, 0, 0, 0),       Color(170, 70, 70, 70) };
@@ -616,7 +617,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
     int padding  = s.padding  < 0 ? 0 : s.padding;
     int cornerRadius = s.cornerRadius < 0 ? 0 : s.cornerRadius;
-    const int margin = 16; // shadow margin on each side
+    const int margin = 18; // shadow margin on each side (covers spread 13 + dy 4)
 
     bool light = SystemUsesLightTheme();
     uint32_t themeBg   = light ? 0xFFFFFFFFu : 0xFF202020u;
