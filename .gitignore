@@ -1,1 +1,4 @@
-.superpowers/
+*.exe
+*.o
+*.obj
+tests/helpers_generated.h
