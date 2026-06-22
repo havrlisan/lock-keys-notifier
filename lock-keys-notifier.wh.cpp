@@ -673,6 +673,51 @@ void RequestToast(int keyIndex, bool isOn) {
     }
 }
 
+static const int kLockVk[KI_Count] = { VK_CAPITAL, VK_NUMLOCK, VK_SCROLL, VK_INSERT };
+static bool g_keyDown[KI_Count]  = { false, false, false, false };
+static bool g_keyState[KI_Count] = { false, false, false, false };
+static HHOOK g_realHook = nullptr;
+
+static bool KeyEnabled(const Settings& s, int ki) {
+    switch (ki) {
+        case KI_Caps:   return s.notifyCaps;
+        case KI_Num:    return s.notifyNum;
+        case KI_Scroll: return s.notifyScroll;
+        default:        return s.notifyInsert;
+    }
+}
+
+static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lParam) {
+    if (code == HC_ACTION) {
+        KBDLLHOOKSTRUCT* k = (KBDLLHOOKSTRUCT*)lParam;
+        bool down = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+        bool up   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
+        for (int i = 0; i < KI_Count; ++i) {
+            if ((int)k->vkCode != kLockVk[i]) continue;
+            if (down) {
+                if (!g_keyDown[i]) {            // down edge only (ignore auto-repeat)
+                    g_keyDown[i] = true;
+                    g_keyState[i] = !g_keyState[i];
+                    Settings s;
+                    EnterCriticalSection(&g_settingsCs);
+                    bool enabled = KeyEnabled(g_settings, i);
+                    LeaveCriticalSection(&g_settingsCs);
+                    if (enabled) RequestToast(i, g_keyState[i]);
+                }
+            } else if (up) {
+                g_keyDown[i] = false;
+            }
+            break;
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+static void SeedKeyStates() {
+    for (int i = 0; i < KI_Count; ++i)
+        g_keyState[i] = (GetKeyState(kLockVk[i]) & 1) != 0;
+}
+
 static DWORD WINAPI WorkerThreadProc(LPVOID) {
     GdiplusStartupInput gsi;
     GdiplusStartup(&g_gdiplusToken, &gsi, nullptr);
@@ -695,12 +740,18 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
             0, 0, 0, 0, nullptr, nullptr, hInst, nullptr);
     }
 
+    SeedKeyStates();
+    g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
+    if (!g_realHook) Wh_Log(L"keyboard hook install failed");
+
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         if (msg.message == WM_APP_QUIT) break;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+
+    if (g_realHook) { UnhookWindowsHookEx(g_realHook); g_realHook = nullptr; }
 
     for (auto& tw : g_toasts) {
         if (tw.hwnd) DestroyWindow(tw.hwnd);
