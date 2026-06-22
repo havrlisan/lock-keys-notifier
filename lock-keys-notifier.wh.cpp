@@ -567,6 +567,50 @@ static void DrawTile(Graphics& g, const ToastCtx& c, const RectF& surface) {
                  RectF(tx, ty + nb.Height + lineGap, sb.Width + 2, sb.Height + 2), &leftFmt, &sbr);
 }
 
+// Minimal: glyph (if enabled) + name + state word, all one line. State is shown by
+// color (accent when ON, neutral when OFF) at the name's font size — no pill.
+static SIZE MeasureMinimal(Graphics& g, const ToastCtx& c) {
+    const REAL gap = 8.0f;
+    REAL glyphW = 0, glyphH = 0;
+    if (c.showGlyph) {
+        RectF b; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &b);
+        glyphW = b.Width; glyphH = b.Height;
+    }
+    RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName, PointF(0, 0), &nb);
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontName, PointF(0, 0), &sb);
+    REAL contentW = (c.showGlyph ? glyphW + gap : 0) + nb.Width + gap + sb.Width;
+    REAL contentH = (nb.Height > ((glyphH > sb.Height) ? glyphH : sb.Height))
+                    ? nb.Height
+                    : ((glyphH > sb.Height) ? glyphH : sb.Height);
+    return SIZE{ (int)(contentW + c.padding * 2 + 0.5f),
+                 (int)(contentH + c.padding * 2 + 0.5f) };
+}
+
+static void DrawMinimal(Graphics& g, const ToastCtx& c, const RectF& surface) {
+    const REAL gap = 8.0f;
+    REAL x = surface.X + c.padding;
+    StringFormat leftFmt; leftFmt.SetAlignment(StringAlignmentNear); leftFmt.SetLineAlignment(StringAlignmentCenter);
+
+    if (c.showGlyph) {
+        RectF gb; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &gb);
+        SolidBrush br(ToGdiColor(c.fg));
+        g.DrawString(c.glyph, -1, c.fontGlyph, RectF(x, surface.Y, gb.Width + 1, surface.Height), &leftFmt, &br);
+        x += gb.Width + gap;
+    }
+
+    RectF nb; g.MeasureString(c.name.c_str(), -1, c.fontName, PointF(0, 0), &nb);
+    {
+        SolidBrush br(ToGdiColor(c.fg));
+        g.DrawString(c.name.c_str(), -1, c.fontName, RectF(x, surface.Y, nb.Width + 1, surface.Height), &leftFmt, &br);
+        x += nb.Width + gap;
+    }
+
+    RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontName, PointF(0, 0), &sb);
+    PillColors pc = MakePillColors(c.acc, c.isOn, c.light);
+    SolidBrush sbr(pc.text);
+    g.DrawString(c.state.c_str(), -1, c.fontName, RectF(x, surface.Y, sb.Width + 1, surface.Height), &leftFmt, &sbr);
+}
+
 // Render the toast for (keyIndex, isOn) into tw.dib; sets tw.size. Returns false on failure.
 static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn) {
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
@@ -618,7 +662,11 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         Graphics g(screen);
         g.SetTextRenderingHint(TextRenderingHintAntiAlias);
         if (s.autoSize) {
-            surf = (s.layout == ToastLayout::Tile) ? MeasureTile(g, c) : MeasurePill(g, c);
+            switch (s.layout) {
+                case ToastLayout::Tile:    surf = MeasureTile(g, c);    break;
+                case ToastLayout::Minimal: surf = MeasureMinimal(g, c); break;
+                default:                   surf = MeasurePill(g, c);    break;
+            }
         } else {
             surf = SIZE{ s.width, s.height };
         }
@@ -666,8 +714,11 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         Pen borderPen(ToGdiColor(borderCol), borderW);
         g.DrawPath(&borderPen, &path);
 
-        if (s.layout == ToastLayout::Tile) DrawTile(g, c, surface);
-        else                               DrawPill(g, c, surface);
+        switch (s.layout) {
+            case ToastLayout::Tile:    DrawTile(g, c, surface);    break;
+            case ToastLayout::Minimal: DrawMinimal(g, c, surface); break;
+            default:                   DrawPill(g, c, surface);    break;
+        }
     }
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
