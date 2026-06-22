@@ -14,9 +14,24 @@
 /*
 # Lock Keys Notifier
 
-Shows a small, customizable toast notification whenever a lock key
-(Caps Lock, Num Lock, Scroll Lock, or Insert) is toggled, displaying its new
-ON/OFF state. See the project README for full details.
+Displays a small, customizable toast whenever a lock key (Caps Lock, Num Lock,
+Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
+
+## Features
+- Per-key enable/disable.
+- 9-point positioning with offsets, on the active, primary, or all monitors.
+- Themeable colors, opacity, corner radius, padding, font, and a per-key accent
+  indicator dot. Follows the system light/dark theme and accent by default.
+- Optional fade animation and optional sound (system default or custom WAV).
+- Customizable text via a {key} / {state} template, plus editable labels and
+  key names.
+
+## Notes
+- Runs in explorer.exe; notifications pause if Explorer is not running.
+- Fullscreen exclusive apps may cover the toast.
+- Insert reports the OS toggle bit, not an app's overtype mode (off by default).
+
+License: MIT.
 */
 // ==/WindhawkModReadme==
 
