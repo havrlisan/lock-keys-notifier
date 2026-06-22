@@ -2,3 +2,4 @@
 *.o
 *.obj
 tests/helpers_generated.h
+.superpowers/
