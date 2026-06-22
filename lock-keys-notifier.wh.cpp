@@ -162,6 +162,14 @@ enum class Anchor {
     BottomLeft, BottomCenter, BottomRight
 };
 
+enum class ToastLayout { Pill, Tile, Minimal };
+
+inline ToastLayout parseLayout(const std::wstring& s) {
+    if (s == L"tile")    return ToastLayout::Tile;
+    if (s == L"minimal") return ToastLayout::Minimal;
+    return ToastLayout::Pill;
+}
+
 inline bool parseHexColor(const std::wstring& in, uint32_t& outArgb) {
     std::wstring s = in;
     if (!s.empty() && s[0] == L'#') s.erase(0, 1);

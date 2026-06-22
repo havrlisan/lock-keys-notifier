@@ -20,6 +20,13 @@ int main() {
     CHECK(formatTemplate(L"{state} {key} {state}", L"Num", L"OFF") == L"OFF Num OFF");
     CHECK(formatTemplate(L"no placeholders", L"X", L"Y") == L"no placeholders");
 
+    // parseLayout
+    CHECK(parseLayout(L"pill") == ToastLayout::Pill);
+    CHECK(parseLayout(L"tile") == ToastLayout::Tile);
+    CHECK(parseLayout(L"minimal") == ToastLayout::Minimal);
+    CHECK(parseLayout(L"") == ToastLayout::Pill);        // blank -> default
+    CHECK(parseLayout(L"bogus") == ToastLayout::Pill);   // unknown -> default
+
     // computeToastRect
     RECT wa{0, 0, 1000, 1000};
     SIZE s{100, 40};
