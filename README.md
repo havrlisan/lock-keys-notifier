@@ -15,7 +15,8 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 - Follows the system light/dark theme and accent color by default; any color is
   overridable with a hex value.
 - Optional fade animation and optional sound (system default or a custom WAV).
-- Three layouts (Pill, Tile, Minimal); editable ON/OFF labels and key names,
+- Three layouts (Pill, Tile, Minimal); optional per-key icon glyph; editable
+  ON/OFF labels and key names.
 
 ## How it works
 
