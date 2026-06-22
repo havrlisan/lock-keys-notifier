@@ -148,7 +148,6 @@ License: MIT.
 #include <gdiplus.h>
 #include <mmsystem.h>
 #include <vector>
-#include <algorithm>
 
 // === HELPERS BEGIN === (pure: no Windhawk/GDI deps; extracted for tests)
 enum class Anchor {
@@ -254,7 +253,7 @@ CRITICAL_SECTION g_settingsCs;
 static std::wstring GetStr(PCWSTR name) {
     PCWSTR p = Wh_GetStringSetting(name);
     std::wstring s = p ? p : L"";
-    Wh_FreeStringSetting(p);
+    if (p) Wh_FreeStringSetting(p);
     return s;
 }
 
@@ -369,6 +368,8 @@ struct ToastWindow {
 static std::vector<ToastWindow> g_toasts;   // index 0 for active/primary; one per monitor for "all"
 static DWORD  g_workerThreadId = 0;
 static HANDLE g_workerThread = nullptr;
+static HANDLE g_workerReady = nullptr;
+static bool   g_hookInstalled = false;
 static ULONG_PTR g_gdiplusToken = 0;
 
 // Resolve a color setting string to ARGB, falling back to a theme default.
@@ -398,6 +399,9 @@ static const std::wstring& KeyAccent(const Settings& s, int ki) {
 
 // Render the toast for (keyIndex, isOn) into tw.dib; sets tw.size. Returns false on failure.
 static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn) {
+    int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
+    int padding = s.padding < 0 ? 0 : s.padding;
+    int cornerRadius = s.cornerRadius < 0 ? 0 : s.cornerRadius;
     bool light = SystemUsesLightTheme();
     uint32_t themeBg   = light ? 0xFFFFFFFFu : 0xFF202020u;
     uint32_t themeText = light ? 0xFF000000u : 0xFFFFFFFFu;
@@ -420,10 +424,10 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     FontFamily ff(s.fontFamily.c_str());
     FontFamily def(L"Segoe UI");
     const FontFamily* useFf = ff.IsAvailable() ? &ff : &def;
-    Font font(useFf, (REAL)s.fontSize, style, UnitPixel);
+    Font font(useFf, (REAL)fontSize, style, UnitPixel);
 
     // Measure text using a scratch graphics.
-    int dotW = s.showIndicator ? (s.fontSize / 2 + 8) : 0;
+    int dotW = s.showIndicator ? (fontSize / 2 + 8) : 0;
     REAL textW = 0, textH = 0;
     {
         HDC screen = GetDC(nullptr);
@@ -437,8 +441,8 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
 
     int w, h;
     if (s.autoSize) {
-        w = (int)(textW + 0.5f) + dotW + s.padding * 2;
-        h = (int)(textH + 0.5f) + s.padding * 2;
+        w = (int)(textW + 0.5f) + dotW + padding * 2;
+        h = (int)(textH + 0.5f) + padding * 2;
     } else {
         w = s.width; h = s.height;
     }
@@ -468,7 +472,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         g.SetTextRenderingHint(TextRenderingHintAntiAlias);
         g.Clear(Color(0, 0, 0, 0));
 
-        REAL radius = (REAL)s.cornerRadius;
+        REAL radius = (REAL)cornerRadius;
         REAL d = radius * 2;
         RectF rc(0.5f, 0.5f, (REAL)w - 1.0f, (REAL)h - 1.0f);
         GraphicsPath path;
@@ -490,10 +494,10 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
             g.DrawPath(&pen, &path);
         }
 
-        REAL textLeft = (REAL)s.padding;
+        REAL textLeft = (REAL)padding;
         if (s.showIndicator) {
-            REAL dia = (REAL)s.fontSize / 2;
-            REAL cx = (REAL)s.padding;
+            REAL dia = (REAL)fontSize / 2;
+            REAL cx = (REAL)padding;
             REAL cy = ((REAL)h - dia) / 2;
             Color onColor = toColor(acc);
             Color offColor(0xFF, 0x80, 0x80, 0x80);
@@ -506,7 +510,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
         StringFormat fmt;
         fmt.SetLineAlignment(StringAlignmentCenter);
         fmt.SetAlignment(StringAlignmentNear);
-        RectF layout(textLeft, 0, (REAL)w - textLeft - s.padding, (REAL)h);
+        RectF layout(textLeft, 0, (REAL)w - textLeft - padding, (REAL)h);
         g.DrawString(text.c_str(), -1, &font, layout, &fmt, &textBrush);
     }
     SelectObject(memDC, oldBmp);
@@ -623,6 +627,9 @@ static LRESULT CALLBACK ToastWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_APP_SHOWTOAST:
         DoShow((int)wParam, (bool)lParam);
         return 0;
+    case WM_APP_QUIT:
+        PostQuitMessage(0);
+        return 0;
     case WM_TIMER: {
         // Find which toast owns this hwnd.
         ToastWindow* tw = nullptr;
@@ -713,7 +720,6 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
                 if (!g_keyDown[i]) {            // down edge only (ignore auto-repeat)
                     g_keyDown[i] = true;
                     g_keyState[i] = !g_keyState[i];
-                    Settings s;
                     EnterCriticalSection(&g_settingsCs);
                     bool enabled = KeyEnabled(g_settings, i);
                     LeaveCriticalSection(&g_settingsCs);
@@ -757,11 +763,15 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
 
     SeedKeyStates();
     g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
+
+    // Invariant: SeedKeyStates + hook install run here, before the pump, so
+    // g_keyState/g_keyDown are only touched by this thread once events flow.
+    g_hookInstalled = (g_realHook != nullptr);
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
+    if (g_workerReady) SetEvent(g_workerReady);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
-        if (msg.message == WM_APP_QUIT) break;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -779,19 +789,29 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
 }
 
 bool StartWorker() {
+    g_hookInstalled = false;
+    g_workerReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_workerThread = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, &g_workerThreadId);
-    return g_workerThread != nullptr;
+    if (!g_workerThread) {
+        if (g_workerReady) { CloseHandle(g_workerReady); g_workerReady = nullptr; }
+        return false;
+    }
+    if (g_workerReady) WaitForSingleObject(g_workerReady, 5000);
+    return g_hookInstalled;
 }
 
 void StopWorker() {
-    if (g_workerThreadId)
-        PostThreadMessageW(g_workerThreadId, WM_APP_QUIT, 0, 0);
+    if (!g_toasts.empty() && g_toasts[0].hwnd)
+        PostMessageW(g_toasts[0].hwnd, WM_APP_QUIT, 0, 0);
+    else if (g_workerThreadId)
+        PostThreadMessageW(g_workerThreadId, WM_QUIT, 0, 0);
     if (g_workerThread) {
         WaitForSingleObject(g_workerThread, 5000);
         CloseHandle(g_workerThread);
         g_workerThread = nullptr;
         g_workerThreadId = 0;
     }
+    if (g_workerReady) { CloseHandle(g_workerReady); g_workerReady = nullptr; }
 }
 
 BOOL Wh_ModInit() {
@@ -799,7 +819,8 @@ BOOL Wh_ModInit() {
     InitializeCriticalSection(&g_settingsCs);
     LoadSettings();
     if (!StartWorker()) {
-        Wh_Log(L"worker start failed");
+        Wh_Log(L"worker/hook start failed");
+        StopWorker();
         DeleteCriticalSection(&g_settingsCs);
         return FALSE;
     }

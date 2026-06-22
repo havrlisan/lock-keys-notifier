@@ -47,6 +47,8 @@ All options are configured from the Windhawk settings UI. Highlights:
 - Fullscreen exclusive applications (some games) may cover the topmost toast.
 - **Insert** reports the OS toggle bit, not any application's overtype mode,
   which is application-specific. It is off by default.
+- In **All monitors** mode, a monitor connected after the mod is loaded won't
+  show toasts until the mod is reloaded.
 - Architecture: x86-64 (64-bit Explorer).
 
 ## License
