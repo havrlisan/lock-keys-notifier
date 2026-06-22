@@ -779,35 +779,20 @@ void StopWorker() {
     }
 }
 
-// TEMPORARY (Task 4 verification) — replaced in Task 6.
-static HHOOK g_tempHook = nullptr;
-static LRESULT CALLBACK TempKbdProc(int code, WPARAM wParam, LPARAM lParam) {
-    if (code == HC_ACTION && wParam == WM_KEYDOWN) {
-        KBDLLHOOKSTRUCT* k = (KBDLLHOOKSTRUCT*)lParam;
-        if (k->vkCode == 'L' &&
-            (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
-            (GetAsyncKeyState(VK_MENU) & 0x8000) &&
-            (GetAsyncKeyState(VK_SHIFT) & 0x8000)) {
-            static bool on = false; on = !on;
-            RequestToast(KI_Caps, on);
-        }
-    }
-    return CallNextHookEx(nullptr, code, wParam, lParam);
-}
-
 BOOL Wh_ModInit() {
     Wh_Log(L"Lock Keys Notifier init");
     InitializeCriticalSection(&g_settingsCs);
     LoadSettings();
-    if (!StartWorker()) { Wh_Log(L"worker start failed"); return FALSE; }
-    Sleep(50); // let the worker create its windows
-    g_tempHook = SetWindowsHookExW(WH_KEYBOARD_LL, TempKbdProc, GetThisModule(), 0);
+    if (!StartWorker()) {
+        Wh_Log(L"worker start failed");
+        DeleteCriticalSection(&g_settingsCs);
+        return FALSE;
+    }
     return TRUE;
 }
 
 void Wh_ModUninit() {
     Wh_Log(L"Lock Keys Notifier uninit");
-    if (g_tempHook) { UnhookWindowsHookEx(g_tempHook); g_tempHook = nullptr; }
     StopWorker();
     DeleteCriticalSection(&g_settingsCs);
 }
