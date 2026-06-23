@@ -22,6 +22,12 @@ int main() {
     CHECK(parseLayout(L"") == ToastLayout::Pill);        // blank -> default
     CHECK(parseLayout(L"bogus") == ToastLayout::Pill);   // unknown -> default
 
+    // parseInsertMode
+    CHECK(parseInsertMode(L"single") == InsertMode::Single);
+    CHECK(parseInsertMode(L"onoff")  == InsertMode::OnOff);
+    CHECK(parseInsertMode(L"")       == InsertMode::OnOff);   // blank -> default
+    CHECK(parseInsertMode(L"bogus")  == InsertMode::OnOff);   // unknown -> default
+
     // computeToastRect
     RECT wa{0, 0, 1000, 1000};
     SIZE s{100, 40};

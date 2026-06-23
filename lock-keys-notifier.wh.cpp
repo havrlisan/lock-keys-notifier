@@ -189,6 +189,13 @@ inline ToastLayout parseLayout(const std::wstring& s) {
     return ToastLayout::Pill;
 }
 
+enum class InsertMode { OnOff, Single };
+
+inline InsertMode parseInsertMode(const std::wstring& s) {
+    if (s == L"single") return InsertMode::Single;
+    return InsertMode::OnOff;
+}
+
 inline bool parseHexColor(const std::wstring& in, uint32_t& outArgb) {
     std::wstring s = in;
     if (!s.empty() && s[0] == L'#') s.erase(0, 1);
