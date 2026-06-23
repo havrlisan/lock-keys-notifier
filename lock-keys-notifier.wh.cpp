@@ -1146,8 +1146,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
                 bool isOn = (GetKeyState(kLockVk[i]) & 1) != 0;
                 EnterCriticalSection(&g_settingsCs);
                 bool enabled = KeyEnabled(g_settings, i);
+                bool suppressFs = g_settings.suppressFullscreen;
                 LeaveCriticalSection(&g_settingsCs);
-                if (enabled) RequestToast(i, isOn);
+                // Detector calls Windows APIs — run it outside the lock, and only
+                // when the flag is on so it costs nothing when disabled.
+                if (enabled && !(suppressFs && IsFullscreenActive())) RequestToast(i, isOn);
                 break;
             }
         }
