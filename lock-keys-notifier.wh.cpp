@@ -150,6 +150,14 @@ License: MIT.
   $name: Scroll Lock accent color
 - insertAccentColor: ""
   $name: Insert accent color
+- insertDisplayMode: onoff
+  $name: Insert display mode
+  $options:
+  - onoff: On/Off — accent when on, neutral when off
+  - single: Single value — one fixed label, neutral
+- insertSingleLabel: "pressed"
+  $name: Insert single-value label
+  $description: Shown for every Insert press when Insert display mode is "Single value".
 - labelOn: "ON"
   $name: ON label
 - labelOff: "OFF"
@@ -305,6 +313,8 @@ struct Settings {
     std::wstring capsAccent, numAccent, scrollAccent, insertAccent;
     std::wstring labelOn, labelOff;
     std::wstring nameCaps, nameNum, nameScroll, nameInsert;
+    InsertMode insertDisplayMode;
+    std::wstring insertSingleLabel;
 };
 
 Settings g_settings;
@@ -405,6 +415,8 @@ void LoadSettings() {
     s.nameNum      = GetStr(L"nameNum");
     s.nameScroll   = GetStr(L"nameScroll");
     s.nameInsert   = GetStr(L"nameInsert");
+    s.insertDisplayMode = parseInsertMode(GetStr(L"insertDisplayMode"));
+    s.insertSingleLabel = GetStr(L"insertSingleLabel");
 
     EnterCriticalSection(&g_settingsCs);
     g_settings = std::move(s);
@@ -726,6 +738,12 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     c.showGlyph = s.showIcon;
     c.fontSize = fontSizeS; c.padding = paddingS; c.scale = scale;
     c.fontName = &fontName; c.fontState = &fontState; c.fontGlyph = &fontGlyph;
+
+    bool insertSingle = (keyIndex == KI_Insert &&
+                         s.insertDisplayMode == InsertMode::Single);
+    c.isOn  = insertSingle ? false : isOn;                 // force neutral coloring
+    c.state = insertSingle ? s.insertSingleLabel
+                           : (isOn ? s.labelOn : s.labelOff);
 
     // Measure surface size for the active layout (Pill is the default).
     SIZE surf;
