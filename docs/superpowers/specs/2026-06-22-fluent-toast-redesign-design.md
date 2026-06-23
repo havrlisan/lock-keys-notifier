@@ -79,14 +79,18 @@ premultiply alpha — with these changes:
 3. **Multi-run text measurement:** auto-size sums the measured widths of the
    present pieces (glyph + gaps + name + gap + pill) plus per-layout padding,
    instead of measuring one combined string.
-4. **Drop shadow (new primitive):** the layered window/DIB is expanded by a
-   fixed shadow margin on all sides; a soft shadow is rendered beneath the
-   surface via layered-alpha falloff (e.g. successive rounded-rect fills of
-   growing size and decreasing alpha, or an alpha-channel blur). The surface is
-   inset within the margin. `computeToastRect` continues to position by the
-   **visible surface** rect, not the shadow-expanded bounds — the margin must
-   not shift the anchored position. (Implementation note: account for the margin
-   when placing the window vs. the surface.)
+4. **Drop shadow (new primitive, configurable):** the layered window/DIB is
+   expanded by a shadow margin on all sides; a soft shadow is rendered beneath
+   the surface via layered-alpha falloff (successive rounded-rect fills of
+   growing size and decreasing alpha). The surface is inset within the margin.
+   `computeToastRect` continues to position by the **visible surface** rect, not
+   the shadow-expanded bounds — the margin must not shift the anchored position.
+   (Implementation note: account for the margin when placing the window vs. the
+   surface.) The shadow's spread, per-layer alpha, vertical offset, and color
+   are driven by settings (see §4), so the margin is **computed from those**
+   (`ceil(size) + abs(offsetY) + 1`), not a fixed constant. When the shadow is
+   disabled the falloff is skipped and the margin collapses to a small AA-safety
+   pad; positioning is unaffected because placement already subtracts the margin.
 5. **Premultiply step** is unchanged (runs over the full expanded DIB).
 
 ### 3.1 Surface: solid now, acrylic later
@@ -104,6 +108,16 @@ draw code. Acrylic is **out of scope** for this pass.
 - `layout` — `pill` (default) / `tile` / `minimal`.
 - `showIcon` — bool, default `false`. Shows the per-key symbol glyph
   (Pill/Minimal).
+- `shadowEnabled` — bool, default `true`. When off, no shadow is drawn and the
+  DIB margin collapses.
+- `shadowSize` — int px, default `13` (range 0–40). The shadow's outward spread
+  past the surface edge.
+- `shadowOpacity` — int, default `40` (range 0–100). Maps to per-layer alpha as
+  `alpha = opacity × 25 ÷ 100`, so `40` reproduces the original fixed look.
+- `shadowOffsetY` — int px, default `4` (range −20–20). Vertical drop offset;
+  negative casts the shadow upward.
+- `shadowColor` — hex string, default blank = black. RGB only; any alpha byte in
+  the hex is ignored because `shadowOpacity` is the single darkness control.
 
 ### Removed
 - `showIndicator` — the indicator dot is gone; `showIcon` replaces it.
