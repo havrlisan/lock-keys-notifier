@@ -61,7 +61,7 @@ Two layers, OR'd together:
 // Returns true when a fullscreen app should suppress the toast.
 static bool IsFullscreenActive() {
     // Layer 1: shell notification state — the same signal Windows uses to gate
-    // its own toasts. SHQueryUserNotificationState lives in <shlobj_core.h>.
+    // its own toasts. SHQueryUserNotificationState lives in <shellapi.h>.
     QUERY_USER_NOTIFICATION_STATE st;
     if (SUCCEEDED(SHQueryUserNotificationState(&st))) {
         switch (st) {
@@ -104,35 +104,44 @@ Notes:
   visible, so its rect equals the work area, not the monitor).
 - `<=` / `>=` (not `==`) tolerates apps that extend a pixel past the monitor edge.
 
-### Suppression check (`LowLevelKeyboardProc`)
+### Suppression check (`DoShow`)
 
-The check happens where `enabled` is already computed. Read `suppressFullscreen`
-under `g_settingsCs` alongside `KeyEnabled`, then call the detector **outside** the
-lock (Windows API calls must not hold the critical section), and only when the flag
-is on (so it costs nothing when disabled):
+> **Deviation (2026-06-23, post-submission review):** the check was moved **out of**
+> `LowLevelKeyboardProc` and into `DoShow`. An `WH_KEYBOARD_LL` callback runs
+> synchronously and blocks *all* system input until it returns, so the shell +
+> window/monitor queries should not sit on that path. The hook now only marshals
+> (`if (enabled) RequestToast(i, isOn);`); the suppress decision runs in `DoShow`,
+> which executes on the worker thread *after* the hook has returned, so it no longer
+> blocks input. `GetKeyState` stays in the hook (it's cheap).
+
+`DoShow` already snapshots `g_settings` into a local `s` under `g_settingsCs`. Right
+after that snapshot, drop the toast when suppression applies:
 
 ```cpp
-EnterCriticalSection(&g_settingsCs);
-bool enabled = KeyEnabled(g_settings, i);
-bool suppressFs = g_settings.suppressFullscreen;
-LeaveCriticalSection(&g_settingsCs);
-if (enabled && !(suppressFs && IsFullscreenActive())) RequestToast(i, isOn);
+// in LowLevelKeyboardProc — just marshal, don't decide:
+if (enabled) RequestToast(i, isOn);
+
+// at the top of DoShow, after the settings snapshot:
+if (s.suppressFullscreen && IsFullscreenActive()) return;
 ```
 
-The hook runs on the worker thread and only on the key-up edge, so the detector is
-called at most once per physical key press — cheap, and correctly threaded (no new
-threading concerns; `SHQueryUserNotificationState` / `GetForegroundWindow` query
-global state and are safe from any thread).
+`DoShow` runs once per toast event on the worker thread, so the detector is called at
+most once per physical key press — cheap, correctly threaded
+(`SHQueryUserNotificationState` / `GetForegroundWindow` query global state and are
+safe from any thread), and off the input-blocking hook path.
 
 ## Risks / to verify at the compile gate
 
 - `SHQueryUserNotificationState` and `QUERY_USER_NOTIFICATION_STATE`: linkage to
   `shell32` can't be checked by `-fsyntax-only`, so it remains a manual-test concern.
 
-> **Implementation note (deviation):** the Windhawk MinGW-w64 toolchain does not ship
-> `<shlobj_core.h>` (that header is an MSVC-only split). The symbol and enum are
-> declared in `<shlobj.h>` there, so the implementation includes `<shlobj.h>`. No
-> explicit `shell32` pragma was needed for the syntax-only gate.
+> **Header correction (2026-06-23, post-submission review):** an earlier note here
+> claimed `SHQueryUserNotificationState` had to come from `<shlobj.h>` because the
+> MinGW-w64 toolchain lacks `<shlobj_core.h>`. That was wrong: in this toolchain the
+> symbol and `QUERY_USER_NOTIFICATION_STATE` are declared in
+> `Compiler/include/shellapi.h` (verified by `grep`), so the implementation includes
+> `<shellapi.h>` and the `<shlobj.h>` include was removed as unused. No explicit
+> `shell32` pragma was needed for the syntax-only gate.
 
 ## Docs to update
 
@@ -144,7 +153,7 @@ global state and are safe from any thread).
 - **Unit:** none — the detector depends on live shell/window state and stays outside
   the pure-helper markers. No new `helpers_test.cpp` cases.
 - **Compile gate:** whole-mod `-fsyntax-only` clang check passes (also confirms the
-  `<shlobj_core.h>` include resolves).
+  `<shellapi.h>` include resolves `SHQueryUserNotificationState`).
 - **Manual (in Windhawk):**
   - Setting off (default): toast behaves exactly as today in all cases.
   - Setting on, DirectX-exclusive-fullscreen game focused → no toast on lock-key

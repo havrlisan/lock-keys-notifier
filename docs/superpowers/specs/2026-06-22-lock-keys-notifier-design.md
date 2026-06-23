@@ -2,14 +2,27 @@
 
 **Date:** 2026-06-22
 **Author:** Havrlisan
-**Status:** Approved, ready for implementation planning
+**Status:** Approved, implemented
+
+> **Deviation (2026-06-23, post-submission review):** the mod ships as a Windhawk
+> [tool mod](https://github.com/ramensoftware/windhawk/wiki/Mods-as-tools:-Running-mods-in-a-dedicated-process)
+> (`@include windhawk.exe`), running in a dedicated `windhawk.exe` process, **not**
+> injected into `explorer.exe`. It installs no function/symbol hooks — only a global
+> `WH_KEYBOARD_LL` hook, which works from any process — so injecting into Explorer
+> bought nothing and caused duplicate toasts when multiple `explorer.exe` instances
+> exist. The lifecycle entry points are `WhTool_ModInit`/`WhTool_ModSettingsChanged`/
+> `WhTool_ModUninit`, plus the verbatim tool-mod launcher boilerplate. Everything
+> below still holds; mentions of "explorer.exe" as the host now mean the dedicated
+> `windhawk.exe` tool process (also medium integrity, so the UIPI limitation in §3 is
+> unchanged).
 
 ## 1. Overview
 
 A [Windhawk](https://github.com/ramensoftware/windhawk) mod that displays a small,
 custom-drawn toast notification whenever a lock key is toggled, showing the new
 ON/OFF state. The appearance, position, behavior, and text are heavily
-configurable. The mod runs inside `explorer.exe`.
+configurable. The mod runs as a tool mod in a dedicated `windhawk.exe` process
+(see the deviation note above).
 
 **Supported keys:** Caps Lock, Num Lock, Scroll Lock, and (optionally) Insert.
 
@@ -22,9 +35,10 @@ configurable. The mod runs inside `explorer.exe`.
 
 ## 2. Architecture
 
-- **Host process:** injected into `explorer.exe` only (`@include explorer.exe`).
-  Single, always-running instance — lightest footprint and a single global hook
-  covers the whole system.
+- **Host process:** a Windhawk tool mod (`@include windhawk.exe`) — runs in a
+  single dedicated `windhawk.exe` process. A single always-running instance and one
+  global hook cover the whole system, with no dependence on Explorer's lifecycle and
+  no duplicate-toast risk from multiple `explorer.exe` instances.
 - **Key capture:** a low-level keyboard hook,
   `SetWindowsHookEx(WH_KEYBOARD_LL, ...)`, installed on a **dedicated worker
   thread**. That thread owns the hook, the toast window(s), and a message pump.
@@ -71,16 +85,16 @@ displayed state inverted; the next observed toggle reports the true state. Injec
 input (`SendInput` / `keybd_event`) also flows through the LL hook, so programmatic
 toggles are caught.
 
-**Elevated-app limitation (unfixable):** the hook lives in `explorer.exe` at
-**medium** integrity. Windows User Interface Privilege Isolation (UIPI) prevents a
+**Elevated-app limitation (unfixable):** the hook lives in the mod's `windhawk.exe`
+tool process at **medium** integrity. Windows User Interface Privilege Isolation (UIPI) prevents a
 medium-integrity process from observing input directed at a **higher-integrity**
 (elevated / "run as administrator") window. So a lock-key toggle made while an
 elevated app holds keyboard focus does not reach the hook and shows no toast. This
 is not specific to LL hooks — `GetKeyState`/`GetAsyncKeyState` polling and Raw
 Input are blocked identically — and it cannot be worked around from a Windhawk mod:
 the only documented bypass is a **digitally signed binary with `uiAccess="true"`
-installed under a trusted path**, which a JIT-compiled mod DLL injected into
-explorer can never be. (Investigated against m417z's keyboard mods, the Windhawk
+installed under a trusted path**, which a JIT-compiled Windhawk mod DLL can never
+be. (Investigated against m417z's keyboard mods, the Windhawk
 injection model, and the standalone FluentFlyout app — all share this exact gap.)
 
 **Insert caveat:** the mod reports Insert's raw toggle bit. Its real meaning
@@ -185,21 +199,24 @@ injected mod cannot be exercised by a normal unit-test harness:
 
 - **`lock-keys-notifier.wh.cpp`** — the mod. Contains:
   - `// ==WindhawkMod==` metadata block (id, name, description, version,
-    author, github, include = `explorer.exe`, architecture `x86-64` only
-    (decided 2026-06-22: explorer.exe is 64-bit on modern Windows, so a 32-bit
-    build would never be used; x86 dropped as dead weight),
-    `compilerOptions: -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32`).
+    author, github, include = `windhawk.exe` (tool mod — see deviation note), **no
+    `@architecture`** (builds both x86 and x86-64). The original "x86-64 only"
+    decision assumed a 64-bit `explorer.exe` host; as a tool mod the host is
+    `windhawk.exe`, which is **32-bit**, so an x86-64-only mod silently fails to load
+    (no log, no toast). The restriction was removed 2026-06-23 so the mod builds for
+    x86. `compilerOptions: -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32 -lshcore -lshell32`.
   - `// ==WindhawkModReadme==` block.
   - `// ==WindhawkModSettings==` block (all settings above, with `$name` /
     `$description` and `$options` for enums).
-  - The C++ implementation.
+  - The C++ implementation, ending with the verbatim tool-mod launcher boilerplate
+    (`WhTool_*` callbacks + the "Do not modify" `Wh_Mod*` block).
 - **`README.md`** — GitHub-facing; mirrors the readme block plus caveats.
 - **`LICENSE`** — MIT, `Copyright (c) 2026 Havrlisan`.
 
 ## 9. Known Caveats (documented in README)
 
-- Runs in `explorer.exe`; if explorer is not running, notifications pause until it
-  restarts.
+- Runs as a tool mod in its own `windhawk.exe` process, so notifications keep
+  working even when Explorer is restarting or not running.
 - Toggles made while an **elevated (administrator) app** holds keyboard focus are
   not detected — a UIPI integrity-level limitation that cannot be worked around
   from a mod (see §3). The next toggle in a normal app shows the correct state.

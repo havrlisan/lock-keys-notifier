@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single [Windhawk](https://github.com/ramensoftware/windhawk) mod that shows a configurable toast when a lock key (Caps/Num/Scroll/Insert) is toggled. The entire shipping artifact is one self-contained file: `lock-keys-notifier.wh.cpp`. It is compiled and injected into `explorer.exe` by Windhawk, not built into a standalone binary.
+A single [Windhawk](https://github.com/ramensoftware/windhawk) mod that shows a configurable toast when a lock key (Caps/Num/Scroll/Insert) is toggled. The entire shipping artifact is one self-contained file: `lock-keys-notifier.wh.cpp`. It is a [tool mod](https://github.com/ramensoftware/windhawk/wiki/Mods-as-tools:-Running-mods-in-a-dedicated-process) (`@include windhawk.exe`): Windhawk compiles it and runs it in a dedicated `windhawk.exe` process, not injected into `explorer.exe` and not built into a standalone binary. The mod's lifecycle entry points are therefore `WhTool_ModInit`/`WhTool_ModSettingsChanged`/`WhTool_ModUninit`; the `Wh_Mod*` launcher boilerplate at the bottom of the file (the verbatim "Do not modify" block) spawns/registers the dedicated process and must not be edited.
 
 ## The single-file constraint (most important rule)
 
@@ -37,7 +37,7 @@ bash tools/extract-helpers.sh
 "/c/Program Files/Windhawk/Compiler/bin/clang++.exe" -std=c++23 -target x86_64-w64-mingw32 -DUNICODE -D_UNICODE -static -Itests tests/helpers_test.cpp -o tests/helpers_test.exe && ./tests/helpers_test.exe
 ```
 
-There is no automated runtime test — the mod only runs injected into `explorer.exe`. Runtime behavior (toast appears, fades, positions, multi-monitor, enable/disable cycles) is verified **manually** by loading the file in Windhawk (Create New Mod → Compile → Enable). The manual checklist lives in the design spec (`docs/superpowers/specs/`).
+There is no automated runtime test — the mod only runs when loaded by Windhawk (in its dedicated `windhawk.exe` tool process). Runtime behavior (toast appears, fades, positions, multi-monitor, enable/disable cycles) is verified **manually** by loading the file in Windhawk (Create New Mod → Compile → Enable). The manual checklist lives in the design spec (`docs/superpowers/specs/`).
 
 ## Architecture (the parts that span the file)
 
@@ -50,7 +50,7 @@ There is no automated runtime test — the mod only runs injected into `explorer
 
 ## Conventions
 
-- Architecture is **x86-64 only** (explorer is 64-bit on modern Windows; 32-bit was intentionally dropped — see the spec).
+- **No `@architecture` restriction** (builds both x86 and x86-64). The tool-mod host is `windhawk.exe`, which is **32-bit (x86)** on all systems (it ships a separate `windhawk-x64-helper.exe` for 64-bit work), and the spawned `windhawk.exe -tool-mod` process the mod actually runs in is that same 32-bit binary. Pinning `@architecture x86-64` (a leftover from when the host was 64-bit `explorer.exe`) made Windhawk never load the mod into the 32-bit `windhawk.exe` — silent no-op, no log, no toast. So the mod **must** build for x86; the restriction was removed (matching working tool mods like `theme-toggler-tray`).
 - `Insert` reports the OS toggle bit, not any app's overtype mode; it is off by default.
 - Design spec and implementation plan are under `docs/superpowers/`. Update the spec when making a conscious deviation from it.
 - Per the user's global preference: keep commit subjects short; never push without being asked.

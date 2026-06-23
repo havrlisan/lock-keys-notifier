@@ -25,10 +25,12 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 
 ## How it works
 
-The mod runs inside `explorer.exe` and installs a global low-level keyboard hook
-on a dedicated thread. On each lock-key release it reads the key's live toggle
-state and draws a click-through layered window. The window never steals focus and
-ignores mouse input.
+This is a Windhawk [tool mod](https://github.com/ramensoftware/windhawk/wiki/Mods-as-tools:-Running-mods-in-a-dedicated-process):
+it runs in its own dedicated `windhawk.exe` process rather than being injected
+into `explorer.exe`. It installs a global low-level keyboard hook on a dedicated
+thread; on each lock-key release it reads the key's live toggle state and draws a
+click-through layered window. The window never steals focus and ignores mouse
+input.
 
 ## Settings
 
@@ -48,10 +50,10 @@ All options are configured from the Windhawk settings UI. Highlights:
 
 ## Notes & caveats
 
-- The mod runs in `explorer.exe`. If Explorer is not running, notifications
-  pause until it restarts.
+- The mod runs in its own `windhawk.exe` process, so notifications keep working
+  even when Explorer is restarting or not running.
 - **Toggles made while an app running as administrator (elevated) has keyboard
-  focus are not detected.** Explorer runs at medium integrity, and Windows
+  focus are not detected.** The mod process runs at medium integrity, and Windows
   (User Interface Privilege Isolation) blocks a medium-integrity process from
   observing input directed at a higher-integrity window — this affects every
   input method (hooks, raw input, `GetKeyState`), so it can't be worked around
@@ -60,7 +62,7 @@ All options are configured from the Windhawk settings UI. Highlights:
 - Fullscreen exclusive applications (some games) may cover the topmost toast.
 - **Insert** reports the OS toggle bit, not any application's overtype mode,
   which is application-specific. It is off by default.
-- Architecture: x86-64 (64-bit Explorer).
+- Runs in the 32-bit `windhawk.exe` tool-mod host (builds for both x86 and x86-64).
 
 ## License
 
