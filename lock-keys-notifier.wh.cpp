@@ -18,6 +18,18 @@
 Displays a small, customizable toast whenever a lock key (Caps Lock, Num Lock,
 Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
 
+## Preview
+
+Pill, Tile, and Minimal layouts (following the system theme and accent):
+
+![Pill layout](https://raw.githubusercontent.com/havrlisan/lock-keys-notifier/master/images/caps-lock-on-pill.png)
+![Tile layout](https://raw.githubusercontent.com/havrlisan/lock-keys-notifier/master/images/scroll-lock-on-tile.png)
+![Minimal layout](https://raw.githubusercontent.com/havrlisan/lock-keys-notifier/master/images/caps-lock-on-minimal.png)
+
+Insert can show a single fixed label in a neutral color instead of ON/OFF:
+
+![Insert single-value](https://raw.githubusercontent.com/havrlisan/lock-keys-notifier/master/images/insert-pressed-tile.png)
+
 ## Features
 - Per-key enable/disable.
 - 9-point positioning with offsets, on the active, primary, or all monitors.

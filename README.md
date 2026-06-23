@@ -5,6 +5,18 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 **Num Lock**, **Scroll Lock**, or **Insert** — is toggled, showing its new
 **ON/OFF** state.
 
+## Preview
+
+The three layouts, following the system theme and accent:
+
+| Pill | Tile | Minimal |
+|:---:|:---:|:---:|
+| ![Pill layout](images/caps-lock-on-pill.png) | ![Tile layout](images/scroll-lock-on-tile.png) | ![Minimal layout](images/caps-lock-on-minimal.png) |
+
+Insert can show a single fixed label in a neutral color instead of ON/OFF:
+
+![Insert single-value](images/insert-pressed-tile.png)
+
 ## Features
 
 - Toast on lock-key toggle, showing the resulting ON/OFF state.
