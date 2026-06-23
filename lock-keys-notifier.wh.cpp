@@ -196,6 +196,7 @@ License: MIT.
 #include <gdiplus.h>
 #include <mmsystem.h>
 #include <shellscalingapi.h>
+#include <shlobj.h>
 #include <vector>
 
 // === HELPERS BEGIN === (pure: no Windhawk/GDI deps; extracted for tests)
@@ -308,6 +309,43 @@ inline float max3(float a, float b, float c) {
     return m > c ? m : c;
 }
 // === HELPERS END ===
+
+// Returns true when a fullscreen app is in the foreground and the toast should be
+// suppressed. Not pure (shell + window-manager APIs) — must live after HELPERS END.
+static bool IsFullscreenActive() {
+    // Layer 1: the same shell signal Windows uses to gate its own toasts.
+    QUERY_USER_NOTIFICATION_STATE st;
+    if (SUCCEEDED(SHQueryUserNotificationState(&st))) {
+        switch (st) {
+            case QUNS_BUSY:                     // full-screen (non-D3D) app or presentation settings
+            case QUNS_RUNNING_D3D_FULL_SCREEN:  // DirectX exclusive fullscreen
+            case QUNS_PRESENTATION_MODE:        // presentation mode
+            case QUNS_APP:                      // fullscreen Store app
+                return true;
+            default:                            // QUNS_QUIET_TIME (Focus Assist),
+                break;                          // QUNS_ACCEPTS_NOTIFICATIONS, QUNS_NOT_PRESENT
+        }
+    }
+
+    // Layer 2: borderless / fullscreen-video fallback — foreground window covers the
+    // whole monitor (full rcMonitor, not work area) and is not the desktop.
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    if (fg == GetShellWindow() || fg == GetDesktopWindow()) return false;
+    WCHAR cls[16];
+    int n = GetClassNameW(fg, cls, 16);
+    std::wstring c(cls, n > 0 ? n : 0);
+    if (c == L"Progman" || c == L"WorkerW") return false;  // desktop
+
+    RECT wr;
+    if (!GetWindowRect(fg, &wr)) return false;
+    HMONITOR mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    if (!GetMonitorInfo(mon, &mi)) return false;
+    const RECT& m = mi.rcMonitor;  // full monitor bounds, includes the taskbar area
+    return wr.left <= m.left && wr.top <= m.top &&
+           wr.right >= m.right && wr.bottom >= m.bottom;
+}
 
 enum class MonitorTarget { Active, Primary, All };
 enum class SoundMode { None, SystemDefault, Custom };
