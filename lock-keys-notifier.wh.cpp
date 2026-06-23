@@ -25,6 +25,8 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
   the system light/dark theme and accent by default.
 - Optional fade animation and optional sound (system default or custom WAV).
 - Editable ON/OFF labels and per-key display names; optional key icon glyph.
+- Insert can show a single fixed label (e.g. "pressed") in neutral color instead
+  of ON/OFF.
 - Per-monitor DPI aware: scales to each monitor, so it stays the same physical
   size on mixed-DPI multi-monitor setups.
 

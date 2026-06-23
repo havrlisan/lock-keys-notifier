@@ -18,6 +18,8 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 - Optional fade animation and optional sound (system default or a custom WAV).
 - Three layouts (Pill, Tile, Minimal); optional per-key icon glyph; editable
   ON/OFF labels and key names.
+- Insert can optionally show a single fixed label (e.g. "pressed") in neutral
+  color instead of ON/OFF.
 - Per-monitor DPI aware: sizes are scaled to each monitor, so the toast looks the
   same physical size on mixed-DPI setups.
 
