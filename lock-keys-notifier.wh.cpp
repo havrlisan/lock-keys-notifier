@@ -103,6 +103,19 @@ License: MIT.
   $name: Padding (px)
 - cornerRadius: 6
   $name: Corner radius (px)
+- shadowEnabled: true
+  $name: Drop shadow
+- shadowSize: 13
+  $name: Shadow size (px)
+  $description: How far the shadow spreads past the window (0-40).
+- shadowOpacity: 40
+  $name: Shadow opacity (0-100)
+- shadowOffsetY: 4
+  $name: Shadow vertical offset (px)
+  $description: Downward drop; negative casts the shadow upward.
+- shadowColor: ""
+  $name: Shadow color
+  $description: Hex like #000000. Blank is black. Alpha is ignored; use opacity.
 - backgroundColor: ""
   $name: Background color
   $description: Hex like #1e1e1e. Blank follows the system light/dark theme.
@@ -255,6 +268,9 @@ struct Settings {
     std::wstring soundFile;
     bool autoSize;
     int width, height, padding, cornerRadius;
+    bool shadowEnabled;
+    int shadowSize, shadowOpacity, shadowOffsetY;
+    std::wstring shadowColor;
     std::wstring backgroundColor;
     int backgroundOpacity;
     std::wstring textColor, borderColor;
@@ -341,6 +357,11 @@ void LoadSettings() {
     s.height       = Wh_GetIntSetting(L"height");
     s.padding      = Wh_GetIntSetting(L"padding");
     s.cornerRadius = Wh_GetIntSetting(L"cornerRadius");
+    s.shadowEnabled = Wh_GetIntSetting(L"shadowEnabled");
+    s.shadowSize    = Wh_GetIntSetting(L"shadowSize");
+    s.shadowOpacity = Wh_GetIntSetting(L"shadowOpacity");
+    s.shadowOffsetY = Wh_GetIntSetting(L"shadowOffsetY");
+    s.shadowColor   = GetStr(L"shadowColor");
     s.backgroundColor   = GetStr(L"backgroundColor");
     s.backgroundOpacity = Wh_GetIntSetting(L"backgroundOpacity");
     s.textColor    = GetStr(L"textColor");
@@ -463,10 +484,10 @@ static PillColors MakePillColors(uint32_t baseAccent, bool isOn, bool light) {
 // Soft drop shadow: stack translucent rounded rects, densest near the surface,
 // fading outward. The surface (drawn opaque afterward) covers the inner buildup,
 // so only the protruding ring shows.
-static void DrawShadow(Graphics& g, const RectF& surface, REAL radius) {
-    const int  layers = 14;
-    const REAL spread = 13.0f;   // how far the shadow bleeds past the surface
-    const REAL dy     = 4.0f;    // downward offset
+static void DrawShadow(Graphics& g, const RectF& surface, REAL radius,
+                       REAL spread, REAL dy, const Color& color) {
+    const int layers = 14;
+    if (spread <= 0.0f || color.GetA() == 0) return;
     for (int i = layers; i >= 1; --i) {
         REAL t = (REAL)i / layers;
         REAL inflate = spread * t;
@@ -474,7 +495,7 @@ static void DrawShadow(Graphics& g, const RectF& surface, REAL radius) {
                  surface.Width + inflate * 2, surface.Height + inflate * 2);
         GraphicsPath sp;
         BuildRoundedRectPath(sp, sr, radius + inflate);
-        SolidBrush sb(Color(10, 0, 0, 0));
+        SolidBrush sb(color);
         g.FillPath(&sb, &sp);
     }
 }
@@ -634,7 +655,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
     int padding  = s.padding  < 0 ? 0 : s.padding;
     int cornerRadius = s.cornerRadius < 0 ? 0 : s.cornerRadius;
-    const int margin = 18; // shadow margin on each side (covers spread 13 + dy 4)
+    int margin = shadowMargin(s.shadowEnabled, s.shadowSize, s.shadowOffsetY);
 
     bool light = SystemUsesLightTheme();
     uint32_t themeBg   = light ? 0xFFFFFFFFu : 0xFF202020u;
@@ -723,7 +744,14 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
                       (REAL)surf.cx - 1.0f, (REAL)surf.cy - 1.0f);
         REAL radius = (REAL)cornerRadius;
 
-        DrawShadow(g, surface, radius);
+        if (s.shadowEnabled) {
+            uint32_t sc = ResolveColor(s.shadowColor, 0xFF000000u);
+            int sa = shadowLayerAlpha(s.shadowOpacity);
+            Color shadowCol((BYTE)sa, (BYTE)((sc >> 16) & 0xFF),
+                            (BYTE)((sc >> 8) & 0xFF), (BYTE)(sc & 0xFF));
+            DrawShadow(g, surface, radius, (REAL)s.shadowSize,
+                       (REAL)s.shadowOffsetY, shadowCol);
+        }
 
         GraphicsPath path;
         BuildRoundedRectPath(path, surface, radius);
