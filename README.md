@@ -11,7 +11,8 @@ small, customizable toast notification whenever a lock key — **Caps Lock**,
 - Per-key enable/disable (ignore the keys you don't care about).
 - 9-point positioning with X/Y offsets, on the active, primary, or all monitors.
 - Fully themeable: background/text/border colors, opacity, corner radius,
-  padding, font family/size/bold/italic, and an optional per-key accent state pill.
+  padding, font family/size/bold/italic, a configurable drop shadow
+  (toggle/size/opacity/offset/color), and an optional per-key accent state pill.
 - Follows the system light/dark theme and accent color by default; any color is
   overridable with a hex value.
 - Optional fade animation and optional sound (system default or a custom WAV).
