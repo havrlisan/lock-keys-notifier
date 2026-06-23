@@ -37,6 +37,7 @@ All options are configured from the Windhawk settings UI. Highlights:
 | Setting | Default | Notes |
 |---|---|---|
 | Notify on Caps/Num/Scroll/Insert | on/on/on/off | Per-key toggles |
+| Don't show when a fullscreen app is active | off | Skips the toast for fullscreen games (DirectX or borderless), fullscreen video, and presentation mode. Focus Assist is not affected |
 | Display duration (ms) | 1500 | Time fully visible before fade-out |
 | Target monitor | Active | Active / Primary / All |
 | Position + offsets | Bottom center, 0 / 48 | 9-point anchor + px offsets |

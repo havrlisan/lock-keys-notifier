@@ -7,7 +7,7 @@
 // @github          https://github.com/havrlisan
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32 -lshcore
+// @compilerOptions -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32 -lshcore -lshell32
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -27,6 +27,8 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
 - Editable ON/OFF labels and per-key display names; optional key icon glyph.
 - Insert can show a single fixed label (e.g. "pressed") in neutral color instead
   of ON/OFF.
+- Optionally skips the toast while a fullscreen app is in the foreground (games,
+  fullscreen video, presentation mode); off by default.
 - Per-monitor DPI aware: scales to each monitor, so it stays the same physical
   size on mixed-DPI multi-monitor setups.
 
@@ -36,7 +38,7 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
   Explorer runs at medium integrity and Windows (UIPI) blocks it from observing
   input to higher-integrity windows; this can't be worked around from a mod. The
   next toggle in a normal app shows the correct state.
-- Fullscreen exclusive apps may cover the toast.
+- Fullscreen exclusive apps may cover the toast (or enable the option above to skip it).
 - Insert reports the OS toggle bit, not an app's overtype mode (off by default).
 
 License: MIT.
