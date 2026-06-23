@@ -221,6 +221,23 @@ inline RECT computeToastRect(Anchor a, SIZE size, int offsetX, int offsetY, cons
 
     return RECT{ x, y, x + size.cx, y + size.cy };
 }
+
+// Per-layer shadow alpha (0-255) from a 0-100 opacity. The shadow stacks 14
+// layers; opacity 40 -> alpha 10 reproduces the original fixed look.
+inline int shadowLayerAlpha(int opacity) {
+    if (opacity < 0) opacity = 0;
+    if (opacity > 100) opacity = 100;
+    return opacity * 25 / 100;
+}
+
+// DIB margin (px per side) needed to contain the shadow: spread + drop
+// magnitude + 1px AA safety. Collapses to a small pad when disabled.
+inline int shadowMargin(bool enabled, int size, int offsetY) {
+    if (!enabled) return 2;
+    if (size < 0) size = 0;
+    int oy = offsetY < 0 ? -offsetY : offsetY;
+    return size + oy + 1;
+}
 // === HELPERS END ===
 
 enum class MonitorTarget { Active, Primary, All };
