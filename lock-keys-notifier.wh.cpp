@@ -5,8 +5,10 @@
 // @version         1.0.0
 // @author          Havrlisan
 // @github          https://github.com/havrlisan
+// @homepage        https://github.com/havrlisan/lock-keys-notifier
 // @include         explorer.exe
 // @architecture    x86-64
+// @license         MIT
 // @compilerOptions -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32 -lshcore -lshell32
 // ==/WindhawkMod==
 
@@ -40,8 +42,6 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
   next toggle in a normal app shows the correct state.
 - Fullscreen exclusive apps may cover the toast (or enable the option above to skip it).
 - Insert reports the OS toggle bit, not an app's overtype mode (off by default).
-
-License: MIT.
 */
 // ==/WindhawkModReadme==
 
