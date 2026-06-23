@@ -28,6 +28,17 @@ int main() {
     CHECK(parseInsertMode(L"")       == InsertMode::OnOff);   // blank -> default
     CHECK(parseInsertMode(L"bogus")  == InsertMode::OnOff);   // unknown -> default
 
+    // parseFontWeight
+    CHECK(parseFontWeight(L"thin")     == FW_THIN);      // 100
+    CHECK(parseFontWeight(L"light")    == FW_LIGHT);     // 300
+    CHECK(parseFontWeight(L"regular")  == FW_NORMAL);    // 400
+    CHECK(parseFontWeight(L"medium")   == FW_MEDIUM);    // 500
+    CHECK(parseFontWeight(L"semibold") == FW_SEMIBOLD);  // 600
+    CHECK(parseFontWeight(L"bold")     == FW_BOLD);      // 700
+    CHECK(parseFontWeight(L"black")    == FW_HEAVY);     // 900
+    CHECK(parseFontWeight(L"")         == FW_SEMIBOLD);  // blank -> default
+    CHECK(parseFontWeight(L"bogus")    == FW_SEMIBOLD);  // unknown -> default
+
     // computeToastRect
     RECT wa{0, 0, 1000, 1000};
     SIZE s{100, 40};

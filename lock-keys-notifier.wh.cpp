@@ -206,6 +206,16 @@ inline InsertMode parseInsertMode(const std::wstring& s) {
     return InsertMode::OnOff;
 }
 
+inline int parseFontWeight(const std::wstring& s) {
+    if (s == L"thin")     return FW_THIN;      // 100
+    if (s == L"light")    return FW_LIGHT;     // 300
+    if (s == L"regular")  return FW_NORMAL;    // 400
+    if (s == L"medium")   return FW_MEDIUM;    // 500
+    if (s == L"bold")     return FW_BOLD;      // 700
+    if (s == L"black")    return FW_HEAVY;     // 900
+    return FW_SEMIBOLD;                        // 600 — default/unknown
+}
+
 inline bool parseHexColor(const std::wstring& in, uint32_t& outArgb) {
     std::wstring s = in;
     if (!s.empty() && s[0] == L'#') s.erase(0, 1);
