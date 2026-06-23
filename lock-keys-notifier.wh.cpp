@@ -54,6 +54,12 @@ License: MIT.
 - notifyInsert: false
   $name: Notify on Insert
   $description: Reports the Insert toggle bit. Its meaning (overtype) is app-specific.
+- suppressFullscreen: false
+  $name: Don't show when a fullscreen app is active
+  $description: >-
+    Skips the toast while a fullscreen application is in the foreground —
+    games (DirectX or borderless), fullscreen video, and presentation mode.
+    Focus Assist / Do Not Disturb is not affected.
 - layout: pill
   $name: Layout
   $options:
@@ -308,6 +314,7 @@ enum class SoundMode { None, SystemDefault, Custom };
 
 struct Settings {
     bool notifyCaps, notifyNum, notifyScroll, notifyInsert;
+    bool suppressFullscreen;
     int durationMs;
     MonitorTarget monitor;
     Anchor anchor;
@@ -396,6 +403,7 @@ void LoadSettings() {
     s.notifyNum    = Wh_GetIntSetting(L"notifyNumLock");
     s.notifyScroll = Wh_GetIntSetting(L"notifyScrollLock");
     s.notifyInsert = Wh_GetIntSetting(L"notifyInsert");
+    s.suppressFullscreen = Wh_GetIntSetting(L"suppressFullscreen");
     s.durationMs   = Wh_GetIntSetting(L"durationMs");
     s.monitor      = ParseMonitor(GetStr(L"monitor"));
     s.anchor       = ParseAnchor(GetStr(L"positionAnchor"));
