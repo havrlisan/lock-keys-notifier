@@ -126,12 +126,13 @@ global state and are safe from any thread).
 
 ## Risks / to verify at the compile gate
 
-- `SHQueryUserNotificationState` and `QUERY_USER_NOTIFICATION_STATE` are declared in
-  `<shlobj_core.h>` (pulled in by `<shlobj.h>`). Confirm the header is available
-  under the Windhawk LLVM toolchain and that the symbol links without an explicit
-  `shell32` pragma; if a link reference is needed, add `#pragma comment(lib, "shell32")`.
-  The `-fsyntax-only` gate won't catch a link issue, so this is also a manual-test
-  concern.
+- `SHQueryUserNotificationState` and `QUERY_USER_NOTIFICATION_STATE`: linkage to
+  `shell32` can't be checked by `-fsyntax-only`, so it remains a manual-test concern.
+
+> **Implementation note (deviation):** the Windhawk MinGW-w64 toolchain does not ship
+> `<shlobj_core.h>` (that header is an MSVC-only split). The symbol and enum are
+> declared in `<shlobj.h>` there, so the implementation includes `<shlobj.h>`. No
+> explicit `shell32` pragma was needed for the syntax-only gate.
 
 ## Docs to update
 
