@@ -85,6 +85,11 @@ three fonts switch to the `Font(const LOGFONTW*)` constructor, which honors
 
 - `lfHeight = -(em pixels)` (negative = character/em height in device pixels, matching
   the current `UnitPixel` em sizes).
+
+> **Implementation note (deviation):** this GDI+ build (bundled MinGW) does not expose
+> the single-argument `Font(const LOGFONTW*)` constructor — only `Font(HDC, const LOGFONTW*)`.
+> The implementation grabs a transient screen DC (`GetDC(nullptr)` / `ReleaseDC`) to build
+> the three fonts.
 - `lfWeight` = the chosen weight.
 - `lfItalic` = `s.fontItalic`.
 - `lfFaceName` = the chosen family, keeping the existing
