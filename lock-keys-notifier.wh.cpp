@@ -137,8 +137,16 @@ License: MIT.
   $name: Font family
 - fontSize: 14
   $name: Font size (px)
-- fontBold: false
-  $name: Bold text
+- fontWeight: semibold
+  $name: Font weight
+  $options:
+  - thin: Thin
+  - light: Light
+  - regular: Regular
+  - medium: Medium
+  - semibold: Semibold
+  - bold: Bold
+  - black: Black
 - fontItalic: false
   $name: Italic text
 - showIcon: false
@@ -319,7 +327,8 @@ struct Settings {
     int borderThickness;
     std::wstring fontFamily;
     int fontSize;
-    bool fontBold, fontItalic;
+    int fontWeight;
+    bool fontItalic;
     bool showIcon;
     ToastLayout layout;
     std::wstring capsAccent, numAccent, scrollAccent, insertAccent;
@@ -413,7 +422,7 @@ void LoadSettings() {
     s.borderThickness = Wh_GetIntSetting(L"borderThickness");
     s.fontFamily   = GetStr(L"fontFamily");
     s.fontSize     = Wh_GetIntSetting(L"fontSize");
-    s.fontBold     = Wh_GetIntSetting(L"fontBold");
+    s.fontWeight   = parseFontWeight(GetStr(L"fontWeight"));
     s.fontItalic   = Wh_GetIntSetting(L"fontItalic");
     s.layout   = parseLayout(GetStr(L"layout"));
     s.showIcon = Wh_GetIntSetting(L"showIcon");
@@ -731,16 +740,35 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     uint32_t borderCol = hasBorder ? ResolveColor(s.borderColor, accent)
                                    : (light ? 0x14000000u : 0x20FFFFFFu);
 
-    // Fonts (sizes already scaled to the target DPI).
-    int style = (s.fontBold ? FontStyleBold : 0) | (s.fontItalic ? FontStyleItalic : 0);
+    // Fonts (sizes already scaled to the target DPI). Built via LOGFONTW so an
+    // arbitrary lfWeight (Thin..Black) takes effect — GDI+'s FontStyle bitmask
+    // only knows Regular/Bold.
     FontFamily ff(s.fontFamily.c_str());
-    FontFamily def(L"Segoe UI");
-    const FontFamily* useFf = ff.IsAvailable() ? &ff : &def;
-    Font fontName(useFf, (REAL)fontSizeS, style, UnitPixel);
+    const wchar_t* face = ff.IsAvailable() ? s.fontFamily.c_str() : L"Segoe UI";
+
     REAL stateSize = (REAL)fontSizeS * 0.5f; REAL minState = 11.0f * scale;
     if (stateSize < minState) stateSize = minState;
-    Font fontState(useFf, stateSize, FontStyleBold, UnitPixel);
-    Font fontGlyph(useFf, (REAL)fontSizeS * 0.9f, style, UnitPixel);
+
+    // emPx = em height in device pixels; weight = lfWeight; italic per setting.
+    // This GDI+ build only exposes Font(HDC, const LOGFONTW*), so pass a screen DC.
+    HDC fontDc = GetDC(nullptr);
+    auto makeFont = [&](REAL emPx, int weight) {
+        LOGFONTW lf{};
+        lf.lfHeight  = -(LONG)(emPx + 0.5f);
+        lf.lfWeight  = weight;
+        lf.lfItalic  = s.fontItalic ? TRUE : FALSE;
+        lf.lfQuality = CLEARTYPE_QUALITY;
+        wcsncpy_s(lf.lfFaceName, LF_FACESIZE, face, _TRUNCATE);
+        return Font(fontDc, &lf);
+    };
+
+    // State label floors at FW_BOLD (max(weight, FW_BOLD)) so it stays an
+    // emphasis element, never lighter than the body.
+    int stateWeight = s.fontWeight > FW_BOLD ? s.fontWeight : FW_BOLD;
+    Font fontName  = makeFont((REAL)fontSizeS,        s.fontWeight);
+    Font fontState = makeFont(stateSize,              stateWeight);
+    Font fontGlyph = makeFont((REAL)fontSizeS * 0.9f, s.fontWeight);
+    ReleaseDC(nullptr, fontDc);
 
     ToastCtx c{};
     c.light = light; c.isOn = isOn; c.fg = fg; c.acc = acc;
