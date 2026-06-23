@@ -95,13 +95,13 @@ License: MIT.
   $description: Path to a .wav file, used when Sound is set to Custom.
 - autoSize: true
   $name: Auto-size to text
-- width: 220
+- width: 124
   $name: Width (px, when auto-size off)
-- height: 64
+- height: 36
   $name: Height (px, when auto-size off)
-- padding: 16
+- padding: 9
   $name: Padding (px)
-- cornerRadius: 10
+- cornerRadius: 6
   $name: Corner radius (px)
 - backgroundColor: ""
   $name: Background color
@@ -118,7 +118,7 @@ License: MIT.
   $name: Border thickness (px)
 - fontFamily: Segoe UI
   $name: Font family
-- fontSize: 24
+- fontSize: 14
   $name: Font size (px)
 - fontBold: false
   $name: Bold text
