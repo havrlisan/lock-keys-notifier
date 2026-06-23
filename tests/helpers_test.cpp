@@ -49,6 +49,20 @@ int main() {
     CHECK(shadowMargin(true, 0, 0) == 1);
     CHECK(shadowMargin(false, 13, 4) == 2);   // disabled collapses to AA pad
 
+    // scaleI: 96-DPI logical px -> physical px at the target DPI
+    CHECK(scaleI(10, 96) == 10);     // 100% -> identity
+    CHECK(scaleI(10, 144) == 15);    // 150%
+    CHECK(scaleI(10, 192) == 20);    // 200%
+    CHECK(scaleI(13, 240) == 33);    // 250%, rounds (MulDiv rounds to nearest)
+    CHECK(scaleI(10, 0) == 10);      // bad DPI falls back to 96
+    CHECK(scaleI(0, 192) == 0);
+
+    // max3
+    CHECK(max3(1.0f, 2.0f, 3.0f) == 3.0f);
+    CHECK(max3(3.0f, 2.0f, 1.0f) == 3.0f);
+    CHECK(max3(1.0f, 3.0f, 2.0f) == 3.0f);
+    CHECK(max3(-1.0f, -2.0f, -3.0f) == -1.0f);
+
     if (g_failures == 0) { printf("All tests passed\n"); return 0; }
     printf("%d failure(s)\n", g_failures);
     return 1;

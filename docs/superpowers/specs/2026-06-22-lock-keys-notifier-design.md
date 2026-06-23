@@ -42,7 +42,17 @@ configurable. The mod runs inside `explorer.exe`.
   its content, repositions it, shows it, and resets the dismiss timer. Rapid
   presses reuse the same window and reset its timer (no stacking).
   - **Exception:** "all monitors" mode creates one window per monitor (a small
-    pool, reused across toggles).
+    pool, reused across toggles). The pool is pre-sized at init from `SM_CMONITORS`
+    and **grown on demand** in `DoShow` if more monitors appear later (hotplug); it
+    never shrinks (surplus windows stay hidden).
+- **DPI awareness:** all pixel-denominated sizes (font, padding, corner radius,
+  border, shadow spread/offset, fixed width/height, position offsets) are authored
+  in **96-DPI logical units** and scaled to each target monitor's effective DPI
+  (`GetDpiForMonitor`) at render time via `scaleI`. Each `ToastWindow` records the
+  DPI it was last rendered for; in "all monitors" mode every window is rendered and
+  positioned for its own monitor's DPI. The layouts' internal constants carry a
+  `scale` factor so proportions hold across scales. The DIB and all drawing are in
+  physical pixels (`UpdateLayeredWindow` positions in physical px).
 
 ## 3. State Detection
 
@@ -215,5 +225,9 @@ checklist**:
 11. Toggle a lock key while an **elevated** app is focused: confirm no toast
     (expected UIPI limitation). Then toggle again in a normal app and confirm the
     state shown is correct (not inverted by the missed toggle).
+12. On a multi-monitor setup with **mixed DPI** (e.g. 100% + 150%), confirm the
+    toast is the same physical size on each monitor in "active" and "all" modes.
+13. Hotplug a monitor while the mod is enabled, then trigger a toast in "all"
+    mode; confirm the newly attached monitor also shows a toast.
 
 The pure helpers (§7) can be checked in isolation.

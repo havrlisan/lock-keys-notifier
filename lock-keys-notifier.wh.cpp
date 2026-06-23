@@ -7,7 +7,7 @@
 // @github          https://github.com/havrlisan
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32
+// @compilerOptions -lgdiplus -ldwmapi -lwinmm -lgdi32 -luser32 -lshcore
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -25,6 +25,8 @@ Scroll Lock, or Insert) is toggled, showing its new ON/OFF state.
   the system light/dark theme and accent by default.
 - Optional fade animation and optional sound (system default or custom WAV).
 - Editable ON/OFF labels and per-key display names; optional key icon glyph.
+- Per-monitor DPI aware: scales to each monitor, so it stays the same physical
+  size on mixed-DPI multi-monitor setups.
 
 ## Notes
 - Runs in explorer.exe; notifications pause if Explorer is not running.
@@ -169,6 +171,7 @@ License: MIT.
 #include <dwmapi.h>
 #include <gdiplus.h>
 #include <mmsystem.h>
+#include <shellscalingapi.h>
 #include <vector>
 
 // === HELPERS BEGIN === (pure: no Windhawk/GDI deps; extracted for tests)
@@ -250,6 +253,18 @@ inline int shadowMargin(bool enabled, int size, int offsetY) {
     if (size < 0) size = 0;
     int oy = offsetY < 0 ? -offsetY : offsetY;
     return size + oy + 1;
+}
+
+// Scale an integer pixel value from 96-DPI logical units to the target DPI.
+inline int scaleI(int value, int dpi) {
+    if (dpi <= 0) dpi = 96;
+    return MulDiv(value, dpi, 96);
+}
+
+// Largest of three (layout content-height helper).
+inline float max3(float a, float b, float c) {
+    float m = a > b ? a : b;
+    return m > c ? m : c;
 }
 // === HELPERS END ===
 
@@ -406,7 +421,8 @@ struct ToastWindow {
     HBITMAP dib = nullptr;   // premultiplied ARGB DIB
     void* bits = nullptr;
     RECT area{};             // work area this toast was last presented on (for timer repositioning)
-    int  margin = 0;         // shadow margin baked into the DIB on each side
+    int  margin = 0;         // shadow margin baked into the DIB on each side (physical px)
+    int  dpi = 96;           // DPI of the monitor this toast was last rendered/presented for
 };
 
 static std::vector<ToastWindow> g_toasts;   // index 0 for active/primary; one per monitor for "all"
@@ -507,7 +523,8 @@ struct ToastCtx {
     std::wstring name, state;
     const wchar_t* glyph;
     bool showGlyph;
-    int fontSize, padding;
+    int fontSize, padding;   // already scaled to the target DPI (physical px)
+    float scale;             // DPI scale factor for the layouts' hardcoded constants
     const Font* fontName;
     const Font* fontState;
     const Font* fontGlyph;
@@ -515,7 +532,7 @@ struct ToastCtx {
 
 // Returns the surface size (content + padding) for the Pill layout.
 static SIZE MeasurePill(Graphics& g, const ToastCtx& c) {
-    const REAL gap = 8.0f, pillPadX = 11.0f, pillPadY = 4.0f;
+    const REAL gap = 8.0f * c.scale, pillPadX = 11.0f * c.scale, pillPadY = 4.0f * c.scale;
     REAL glyphW = 0, glyphH = 0;
     if (c.showGlyph) {
         RectF b; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &b);
@@ -525,13 +542,13 @@ static SIZE MeasurePill(Graphics& g, const ToastCtx& c) {
     RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
     REAL pillW = sb.Width + pillPadX * 2, pillH = sb.Height + pillPadY * 2;
     REAL contentW = (c.showGlyph ? glyphW + gap : 0) + nb.Width + gap + pillW;
-    REAL contentH = (nb.Height > glyphH ? nb.Height : glyphH) > pillH ? (nb.Height > glyphH ? nb.Height : glyphH) : pillH;
+    REAL contentH = max3(nb.Height, glyphH, pillH);
     return SIZE{ (int)(contentW + c.padding * 2 + 0.5f),
                  (int)(contentH + c.padding * 2 + 0.5f) };
 }
 
 static void DrawPill(Graphics& g, const ToastCtx& c, const RectF& surface) {
-    const REAL gap = 8.0f, pillPadX = 11.0f, pillPadY = 4.0f;
+    const REAL gap = 8.0f * c.scale, pillPadX = 11.0f * c.scale, pillPadY = 4.0f * c.scale;
     REAL x = surface.X + c.padding;
     REAL cy = surface.Y + surface.Height / 2;
     StringFormat leftFmt; leftFmt.SetAlignment(StringAlignmentNear); leftFmt.SetLineAlignment(StringAlignmentCenter);
@@ -565,7 +582,7 @@ static void DrawPill(Graphics& g, const ToastCtx& c, const RectF& surface) {
 
 // Tile always shows its icon tile (the defining element), regardless of showIcon.
 static SIZE MeasureTile(Graphics& g, const ToastCtx& c) {
-    const REAL gap = 12.0f, lineGap = 2.0f;
+    const REAL gap = 12.0f * c.scale, lineGap = 2.0f * c.scale;
     REAL tile = (REAL)c.fontSize * 1.6f;
     RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName,  PointF(0, 0), &nb);
     RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontState, PointF(0, 0), &sb);
@@ -578,7 +595,7 @@ static SIZE MeasureTile(Graphics& g, const ToastCtx& c) {
 }
 
 static void DrawTile(Graphics& g, const ToastCtx& c, const RectF& surface) {
-    const REAL gap = 12.0f, lineGap = 2.0f;
+    const REAL gap = 12.0f * c.scale, lineGap = 2.0f * c.scale;
     REAL tile = (REAL)c.fontSize * 1.6f;
     PillColors tc = MakePillColors(c.acc, c.isOn, c.light);
 
@@ -609,7 +626,7 @@ static void DrawTile(Graphics& g, const ToastCtx& c, const RectF& surface) {
 // Minimal: glyph (if enabled) + name + state word, all one line. State is shown by
 // color (accent when ON, neutral when OFF) at the name's font size — no pill.
 static SIZE MeasureMinimal(Graphics& g, const ToastCtx& c) {
-    const REAL gap = 8.0f;
+    const REAL gap = 8.0f * c.scale;
     REAL glyphW = 0, glyphH = 0;
     if (c.showGlyph) {
         RectF b; g.MeasureString(c.glyph, -1, c.fontGlyph, PointF(0, 0), &b);
@@ -618,15 +635,13 @@ static SIZE MeasureMinimal(Graphics& g, const ToastCtx& c) {
     RectF nb; g.MeasureString(c.name.c_str(),  -1, c.fontName, PointF(0, 0), &nb);
     RectF sb; g.MeasureString(c.state.c_str(), -1, c.fontName, PointF(0, 0), &sb);
     REAL contentW = (c.showGlyph ? glyphW + gap : 0) + nb.Width + gap + sb.Width;
-    REAL contentH = (nb.Height > ((glyphH > sb.Height) ? glyphH : sb.Height))
-                    ? nb.Height
-                    : ((glyphH > sb.Height) ? glyphH : sb.Height);
+    REAL contentH = max3(nb.Height, glyphH, sb.Height);
     return SIZE{ (int)(contentW + c.padding * 2 + 0.5f),
                  (int)(contentH + c.padding * 2 + 0.5f) };
 }
 
 static void DrawMinimal(Graphics& g, const ToastCtx& c, const RectF& surface) {
-    const REAL gap = 8.0f;
+    const REAL gap = 8.0f * c.scale;
     REAL x = surface.X + c.padding;
     StringFormat leftFmt; leftFmt.SetAlignment(StringAlignmentNear); leftFmt.SetLineAlignment(StringAlignmentCenter);
 
@@ -651,11 +666,21 @@ static void DrawMinimal(Graphics& g, const ToastCtx& c, const RectF& surface) {
 }
 
 // Render the toast for (keyIndex, isOn) into tw.dib; sets tw.size. Returns false on failure.
-static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn) {
+// All pixel-denominated sizes are scaled from 96-DPI logical units to `dpi` so the
+// toast is the intended physical size on high-DPI monitors. The DIB and everything
+// drawn into it are in physical pixels (UpdateLayeredWindow positions in physical px).
+static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool isOn, int dpi) {
+    float scale = dpi > 0 ? dpi / 96.0f : 1.0f;
     int fontSize = s.fontSize < 1 ? 1 : s.fontSize;
     int padding  = s.padding  < 0 ? 0 : s.padding;
     int cornerRadius = s.cornerRadius < 0 ? 0 : s.cornerRadius;
-    int margin = shadowMargin(s.shadowEnabled, s.shadowSize, s.shadowOffsetY);
+
+    int fontSizeS   = scaleI(fontSize, dpi); if (fontSizeS < 1) fontSizeS = 1;
+    int paddingS    = scaleI(padding, dpi);
+    int cornerS     = scaleI(cornerRadius, dpi);
+    int shadowSizeS = scaleI(s.shadowSize < 0 ? 0 : s.shadowSize, dpi);
+    int shadowOffYS = scaleI(s.shadowOffsetY, dpi);
+    int margin = shadowMargin(s.shadowEnabled, shadowSizeS, shadowOffYS);
 
     bool light = SystemUsesLightTheme();
     uint32_t themeBg   = light ? 0xFFFFFFFFu : 0xFF202020u;
@@ -671,19 +696,20 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     bg = (uint32_t(bgA) << 24) | (bg & 0x00FFFFFFu);
 
     bool hasBorder = s.borderThickness > 0;
-    REAL borderW   = hasBorder ? (REAL)s.borderThickness : 1.0f;
+    REAL borderW   = hasBorder ? (REAL)scaleI(s.borderThickness, dpi) : scale;
     uint32_t borderCol = hasBorder ? ResolveColor(s.borderColor, accent)
                                    : (light ? 0x14000000u : 0x20FFFFFFu);
 
-    // Fonts.
+    // Fonts (sizes already scaled to the target DPI).
     int style = (s.fontBold ? FontStyleBold : 0) | (s.fontItalic ? FontStyleItalic : 0);
     FontFamily ff(s.fontFamily.c_str());
     FontFamily def(L"Segoe UI");
     const FontFamily* useFf = ff.IsAvailable() ? &ff : &def;
-    Font fontName(useFf, (REAL)fontSize, style, UnitPixel);
-    REAL stateSize = (REAL)fontSize * 0.5f; if (stateSize < 11.0f) stateSize = 11.0f;
+    Font fontName(useFf, (REAL)fontSizeS, style, UnitPixel);
+    REAL stateSize = (REAL)fontSizeS * 0.5f; REAL minState = 11.0f * scale;
+    if (stateSize < minState) stateSize = minState;
     Font fontState(useFf, stateSize, FontStyleBold, UnitPixel);
-    Font fontGlyph(useFf, (REAL)fontSize * 0.9f, style, UnitPixel);
+    Font fontGlyph(useFf, (REAL)fontSizeS * 0.9f, style, UnitPixel);
 
     ToastCtx c{};
     c.light = light; c.isOn = isOn; c.fg = fg; c.acc = acc;
@@ -691,7 +717,7 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
     c.state = isOn ? s.labelOn : s.labelOff;
     c.glyph = KeyGlyph(keyIndex);
     c.showGlyph = s.showIcon;
-    c.fontSize = fontSize; c.padding = padding;
+    c.fontSize = fontSizeS; c.padding = paddingS; c.scale = scale;
     c.fontName = &fontName; c.fontState = &fontState; c.fontGlyph = &fontGlyph;
 
     // Measure surface size for the active layout (Pill is the default).
@@ -742,15 +768,15 @@ static bool RenderToast(ToastWindow& tw, const Settings& s, int keyIndex, bool i
 
         RectF surface((REAL)margin + 0.5f, (REAL)margin + 0.5f,
                       (REAL)surf.cx - 1.0f, (REAL)surf.cy - 1.0f);
-        REAL radius = (REAL)cornerRadius;
+        REAL radius = (REAL)cornerS;
 
         if (s.shadowEnabled) {
             uint32_t sc = ResolveColor(s.shadowColor, 0xFF000000u);
             int sa = shadowLayerAlpha(s.shadowOpacity);
             Color shadowCol((BYTE)sa, (BYTE)((sc >> 16) & 0xFF),
                             (BYTE)((sc >> 8) & 0xFF), (BYTE)(sc & 0xFF));
-            DrawShadow(g, surface, radius, (REAL)s.shadowSize,
-                       (REAL)s.shadowOffsetY, shadowCol);
+            DrawShadow(g, surface, radius, (REAL)shadowSizeS,
+                       (REAL)shadowOffYS, shadowCol);
         }
 
         GraphicsPath path;
@@ -798,6 +824,16 @@ static RECT WorkAreaForTarget(MonitorTarget target) {
     return r;
 }
 
+// Effective DPI of the monitor containing (or nearest to) a work area. Falls back
+// to 96 (100%) if the per-monitor API is unavailable.
+static int MonitorDpi(const RECT& area) {
+    HMONITOR mon = MonitorFromRect(&area, MONITOR_DEFAULTTONEAREST);
+    UINT dx = 96, dy = 96;
+    if (mon && SUCCEEDED(GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &dx, &dy)) && dx > 0)
+        return (int)dx;
+    return 96;
+}
+
 struct MonitorList { std::vector<RECT> work; };
 static BOOL CALLBACK EnumMonProc(HMONITOR hm, HDC, LPRECT, LPARAM lp) {
     MONITORINFO mi{ sizeof(mi) };
@@ -808,7 +844,8 @@ static BOOL CALLBACK EnumMonProc(HMONITOR hm, HDC, LPRECT, LPARAM lp) {
 // Present a rendered toast window at the work area; applies fade phase alpha.
 static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& s) {
     SIZE surfaceSize{ tw.size.cx - tw.margin * 2, tw.size.cy - tw.margin * 2 };
-    RECT r = computeToastRect(s.anchor, surfaceSize, s.offsetX, s.offsetY, workArea);
+    RECT r = computeToastRect(s.anchor, surfaceSize,
+                              scaleI(s.offsetX, tw.dpi), scaleI(s.offsetY, tw.dpi), workArea);
     POINT ptPos{ r.left - tw.margin, r.top - tw.margin };
     SIZE szWnd{ tw.size.cx, tw.size.cy };
     POINT ptSrc{ 0, 0 };
@@ -833,6 +870,8 @@ static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& 
 #define HOLD_TIMER 2
 #define FADE_TICK_MS 16
 
+static HWND CreateToastWindow();
+
 static void DoShow(int keyIndex, bool isOn) {
     Settings s;
     EnterCriticalSection(&g_settingsCs);
@@ -848,10 +887,21 @@ static void DoShow(int keyIndex, bool isOn) {
     }
     if (areas.empty()) return;
 
+    // Grow the window pool if monitors were added since init (hotplug). Runs on the
+    // worker thread, so creating windows here is safe. The pool never shrinks; surplus
+    // windows just stay hidden. (Always reached in single-monitor modes after the
+    // worker pre-created its pool, so this is a no-op then.)
+    while (g_toasts.size() < areas.size()) {
+        ToastWindow tw;
+        tw.hwnd = CreateToastWindow();
+        g_toasts.push_back(tw);
+    }
+
     // Ensure we have one ToastWindow per area; the windows themselves were created in the worker init.
     for (size_t i = 0; i < g_toasts.size() && i < areas.size(); ++i) {
         ToastWindow& tw = g_toasts[i];
-        if (!RenderToast(tw, s, keyIndex, isOn)) continue;
+        tw.dpi = MonitorDpi(areas[i]);
+        if (!RenderToast(tw, s, keyIndex, isOn, tw.dpi)) continue;
         tw.area = areas[i];
         tw.alpha = s.fadeEnabled ? (tw.phase == 0 ? 0 : tw.alpha) : 255;
         tw.phase = s.fadeEnabled ? 1 : 2;
@@ -942,6 +992,15 @@ static HMODULE GetThisModule() {
     return h;
 }
 
+// Create one click-through, layered, top-most toast window. The class is registered
+// once in WorkerThreadProc; callers must be on the worker thread.
+static HWND CreateToastWindow() {
+    return CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+        kToastClass, L"", WS_POPUP,
+        0, 0, 0, 0, nullptr, nullptr, GetThisModule(), nullptr);
+}
+
 void RequestToast(int keyIndex, bool isOn) {
     // Marshal to the worker thread; the worker window proc does the work.
     if (!g_toasts.empty() && g_toasts[0].hwnd) {
@@ -1001,10 +1060,7 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     if (n < 1) n = 1;
     g_toasts.resize(n);
     for (auto& tw : g_toasts) {
-        tw.hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-            kToastClass, L"", WS_POPUP,
-            0, 0, 0, 0, nullptr, nullptr, hInst, nullptr);
+        tw.hwnd = CreateToastWindow();
     }
 
     g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
