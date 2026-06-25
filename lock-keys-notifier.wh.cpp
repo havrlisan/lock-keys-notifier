@@ -1198,7 +1198,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
                 // it returns, so keep it cheap. The fullscreen-suppress check
                 // (shell + window/monitor queries) runs in DoShow on the worker
                 // thread, after this callback has returned.
-                if (enabled) RequestToast(i, isOn);
+                if (enabled && ShouldNotify(i, isOn)) RequestToast(i, isOn);
                 break;
             }
         }
