@@ -48,10 +48,13 @@ Insert can show a single fixed label in a neutral color instead of ON/OFF:
 ## Notes
 - Runs as a tool mod in its own windhawk.exe process, so notifications keep
   working even when Explorer is restarting or not running.
-- Toggles made while an elevated (administrator) app has focus are not detected.
-  The mod process runs at medium integrity and Windows (UIPI) blocks it from
-  observing input to higher-integrity windows; this can't be worked around from a
-  mod. The next toggle in a normal app shows the correct state.
+- Toggles made while an elevated (administrator) app has focus are caught by an
+  optional poll fallback ("Detect toggles under elevated apps", on by default,
+  ~250 ms delay). The keyboard hook can't see input to higher-integrity windows
+  (UIPI), so the mod also polls the global lock state. This covers Caps/Num/Scroll.
+  Insert is the exception: its toggle state isn't readable across the integrity
+  boundary, so an Insert toggle made under an elevated app is still missed until the
+  next toggle in a normal app.
 - Fullscreen exclusive apps may cover the toast (or enable the option above to skip it).
 - Insert reports the OS toggle bit, not an app's overtype mode (off by default).
 */
@@ -1207,10 +1210,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
             for (int i = 0; i < KI_Count; ++i) {
                 if ((int)k->vkCode != kLockVk[i]) continue;
                 // Read the live toggle bit on the key-up edge. The state is settled
-                // by release (the key-down read lags), and reading the real bit each
-                // time means a toggle we never saw (e.g. one made while an elevated
-                // app held focus, which UIPI hides from this hook) cannot desync what
-                // we display. One key-up per physical press also ignores auto-repeat.
+                // by release (the key-down read lags). The hook can't see input to a
+                // higher-integrity (elevated) window (UIPI); the poll-timer fallback
+                // covers that gap for Caps/Num/Scroll. ShouldNotify dedups the two
+                // paths so a normal toggle (seen by both) raises one toast. One key-up
+                // per physical press also ignores auto-repeat.
                 bool isOn = (GetKeyState(kLockVk[i]) & 1) != 0;
                 EnterCriticalSection(&g_settingsCs);
                 bool enabled = KeyEnabled(g_settings, i);
