@@ -1053,7 +1053,12 @@ static void SeedToggleState() {
 static void UpdatePollTimer() {
     if (!g_primaryToastHwnd) return;
     EnterCriticalSection(&g_settingsCs);
-    bool want = g_settings.pollElevated;
+    // Arm only when the poll could actually deliver: the feature is on AND at least
+    // one *pollable* key notifies. The poll exists to close the elevated-focus gap,
+    // which only Caps/Num/Scroll can recover — Insert's toggle isn't maintained
+    // across the integrity boundary — so Insert alone is no reason to run the timer.
+    bool want = g_settings.pollElevated &&
+                (g_settings.notifyCaps || g_settings.notifyNum || g_settings.notifyScroll);
     LeaveCriticalSection(&g_settingsCs);
     if (want && !g_pollTimerOn) {
         SeedToggleState();

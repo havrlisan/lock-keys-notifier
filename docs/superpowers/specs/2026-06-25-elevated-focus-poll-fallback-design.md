@@ -172,7 +172,9 @@ if (wParam == POLL_TIMER) {
 PR review: an always-running 250 ms timer is **not** free — it wakes the CPU 4×/s
 forever and keeps the system out of deeper idle/power states even for users who
 disabled the feature (the same "unconditional cost" the warm-up review flagged). So
-the timer exists only while `pollElevated` is on. `SetTimer`/`KillTimer` must run on
+the timer exists only while `pollElevated` is on **and** at least one *pollable* key
+(Caps/Num/Scroll) notifies — Insert can't be recovered under elevated focus, so
+Insert alone is no reason to run it. `SetTimer`/`KillTimer` must run on
 the window-owning worker thread, but `WhTool_ModSettingsChanged` runs on a different
 thread, so it marshals via `PostMessageW(g_primaryToastHwnd, WM_APP_UPDATEPOLL, 0, 0)`;
 the worker handles that message by calling `UpdatePollTimer()`. The `WM_TIMER` branch
