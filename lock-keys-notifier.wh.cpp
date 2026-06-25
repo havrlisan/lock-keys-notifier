@@ -2,7 +2,7 @@
 // @id              lock-keys-notifier
 // @name            Lock Keys Notifier
 // @description     Shows a customizable toast when a lock key (Caps/Num/Scroll/Insert) is toggled
-// @version         1.0.0
+// @version         1.0.1
 // @author          Havrlisan
 // @github          https://github.com/havrlisan
 // @homepage        https://github.com/havrlisan/lock-keys-notifier
@@ -1211,6 +1211,24 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     g_hookInstalled = (g_realHook != nullptr);
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
     if (g_workerReady) SetEvent(g_workerReady);
+
+    // Pre-warm the GDI+ text/font pipeline. The first RenderToast pays a one-time
+    // lazy cost — font enumeration, loading the configured family, spinning up the
+    // GDI+ text subsystem and pulling in its DLLs — which on a cold boot (cold disk)
+    // can be several seconds. Paying it here, after signaling ready (so it never
+    // delays ModInit or the hook going live) and before the pump, moves that cost
+    // off the first key press. A key pressed during this brief warm-up just queues
+    // and is handled once the pump starts. Render into a scratch window and discard
+    // it; nothing is presented.
+    {
+        Settings s;
+        EnterCriticalSection(&g_settingsCs);
+        s = g_settings;
+        LeaveCriticalSection(&g_settingsCs);
+        ToastWindow warm;
+        RenderToast(warm, s, KI_Caps, true, 96);
+        if (warm.dib) DeleteObject(warm.dib);
+    }
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
