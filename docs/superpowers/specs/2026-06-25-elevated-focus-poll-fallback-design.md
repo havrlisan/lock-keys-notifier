@@ -142,8 +142,10 @@ change there.)
 
 - New timer id `POLL_TIMER` (distinct from `FADE_TIMER` / `HOLD_TIMER`) and constant
   `POLL_TICK_MS = 250`.
-- `SetTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr)` once at worker
-  startup (the poll timer must run independent of whether any toast is visible).
+- The poll timer is armed via `UpdatePollTimer()` (worker thread only), which
+  `SetTimer`s only when `pollElevated` is on and `KillTimer`s when it goes off. It
+  runs independent of whether any toast is visible, but **not** when the feature is
+  disabled (see rationale below).
 - Handle it in `ToastWndProc`'s `WM_TIMER`, **branching on `wParam == POLL_TIMER`
   before** the per-toast fade/hold lookup (the poll is not toast-specific):
 
@@ -163,24 +165,30 @@ if (wParam == POLL_TIMER) {
 }
 ```
 
-**Why an always-on timer guarded by the setting check** (rather than
-starting/stopping it on settings change): `SetTimer`/`KillTimer` must run on the
-thread that owns the window, but `WhTool_ModSettingsChanged` runs on a different
-thread. An always-running 250 ms timer that snapshots the setting and returns when
-disabled is effectively free and avoids cross-thread timer management. When disabled,
-there is no observable polling work.
+**Why a conditional timer** (started/stopped to match the setting), revised after
+PR review: an always-running 250 ms timer is **not** free — it wakes the CPU 4×/s
+forever and keeps the system out of deeper idle/power states even for users who
+disabled the feature (the same "unconditional cost" the warm-up review flagged). So
+the timer exists only while `pollElevated` is on. `SetTimer`/`KillTimer` must run on
+the window-owning worker thread, but `WhTool_ModSettingsChanged` runs on a different
+thread, so it marshals via `PostMessageW(g_primaryToastHwnd, WM_APP_UPDATEPOLL, 0, 0)`;
+the worker handles that message by calling `UpdatePollTimer()`. The `WM_TIMER` branch
+keeps its `pollElevated` re-check as cheap insurance for the brief window before a
+disable's `KillTimer` lands.
 
 Because the poll routes through the same `RequestToast → DoShow`, it automatically
 inherits the per-key enable check, fullscreen suppression, layout, multi-monitor
 targeting, and sound — no duplication.
 
-### Why no re-init when the setting is toggled at runtime
+### Re-seed when the poll is enabled at runtime
 
-The hook keeps `g_lastToggle` current at all times (it calls `ShouldNotify` on every
-observed toggle, regardless of the `pollElevated` setting). So enabling the poll later
-needs no re-seed. If a toggle happened under elevated focus *while polling was off*,
-`g_lastToggle` is stale; the first poll after re-enabling will emit a single
-corrective toast — acceptable (it resyncs the display).
+The hook keeps `g_lastToggle` current for toggles it *can* see, but a toggle made
+under elevated focus *while polling was off* leaves it stale. `UpdatePollTimer()`
+therefore calls `SeedToggleState()` before arming, so enabling the feature means
+"detect from now on" rather than retroactively announcing a past toggle the user no
+longer expects a toast for. (Earlier this spec accepted that one corrective toast as
+a resync; the conditional-timer rework gives a clean arm point, so suppressing it is
+both easy and the less surprising behavior.)
 
 ## Single-file / helpers constraint
 

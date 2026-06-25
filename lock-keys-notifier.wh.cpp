@@ -520,6 +520,7 @@ using namespace Gdiplus;
 
 #define WM_APP_SHOWTOAST (WM_APP + 1)
 #define WM_APP_QUIT      (WM_APP + 2)
+#define WM_APP_UPDATEPOLL (WM_APP + 3)
 
 enum KeyIndex { KI_Caps, KI_Num, KI_Scroll, KI_Insert, KI_Count };
 
@@ -1030,6 +1031,36 @@ static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& 
 
 static HWND CreateToastWindow();
 
+// g_lastToggle and the poll timer are touched only on the worker thread (the hook
+// callback, the WM_TIMER poll, and these seeds all run there), so no lock is
+// needed beyond ShouldNotify's reuse of g_settingsCs.
+static bool g_pollTimerOn = false;
+
+static void SeedToggleState() {
+    for (int i = 0; i < KI_Count; ++i)
+        g_lastToggle[i] = (GetKeyState(kLockVk[i]) & 1) != 0;
+}
+
+// Arm/disarm the poll timer to match the pollElevated setting. Worker thread only
+// (it owns the timer's window and message pump). The timer exists only while the
+// feature is on, so a user who disables it pays no recurring wakeup. On enable,
+// re-seed first so the first tick means "from now on" and never replays a toggle
+// that was missed while polling was off.
+static void UpdatePollTimer() {
+    if (!g_primaryToastHwnd) return;
+    EnterCriticalSection(&g_settingsCs);
+    bool want = g_settings.pollElevated;
+    LeaveCriticalSection(&g_settingsCs);
+    if (want && !g_pollTimerOn) {
+        SeedToggleState();
+        SetTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr);
+        g_pollTimerOn = true;
+    } else if (!want && g_pollTimerOn) {
+        KillTimer(g_primaryToastHwnd, POLL_TIMER);
+        g_pollTimerOn = false;
+    }
+}
+
 static void DoShow(int keyIndex, bool isOn) {
     Settings s;
     EnterCriticalSection(&g_settingsCs);
@@ -1097,12 +1128,19 @@ static LRESULT CALLBACK ToastWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_APP_QUIT:
         PostQuitMessage(0);
         return 0;
+    case WM_APP_UPDATEPOLL:
+        UpdatePollTimer();
+        return 0;
     case WM_TIMER: {
         if (wParam == POLL_TIMER) {
             Settings s;
             EnterCriticalSection(&g_settingsCs);
             s = g_settings;
             LeaveCriticalSection(&g_settingsCs);
+            // The timer only runs while pollElevated is on; this re-check just
+            // covers the brief window before a disable's KillTimer lands. The
+            // toggle bit GetKeyState returns here is the global lock state — the
+            // same read the hook path relies on, valid on this non-focused thread.
             if (s.pollElevated) {
                 for (int i = 0; i < KI_Count; ++i) {
                     bool isOn = (GetKeyState(kLockVk[i]) & 1) != 0;
@@ -1272,12 +1310,6 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     }
     g_primaryToastHwnd = g_toasts.empty() ? nullptr : g_toasts[0].hwnd;
 
-    // Continuous poll fallback: catches Caps/Num/Scroll toggles made while an
-    // elevated app has focus (UIPI hides those from the hook). Runs regardless of
-    // toast visibility; the handler no-ops when the setting is off.
-    if (g_primaryToastHwnd)
-        SetTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr);
-
     g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
 
     // Invariant: the hook installs here, before the pump, so its callback (which
@@ -1285,9 +1317,11 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     g_hookInstalled = (g_realHook != nullptr);
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
 
-    // Seed last-known toggle state so the first poll never fires spuriously.
-    for (int i = 0; i < KI_Count; ++i)
-        g_lastToggle[i] = (GetKeyState(kLockVk[i]) & 1) != 0;
+    // Seed last-known toggle state unconditionally — the hook's dedup path needs it
+    // even when the poll is off. Arming the poll fallback (only if pollElevated is
+    // set) re-seeds, so the first tick never fires spuriously.
+    SeedToggleState();
+    UpdatePollTimer();
 
     if (g_workerReady) SetEvent(g_workerReady);
 
@@ -1374,6 +1408,10 @@ void WhTool_ModUninit() {
 void WhTool_ModSettingsChanged() {
     Wh_Log(L"Lock Keys Notifier settings changed");
     LoadSettings();
+    // Runs on Windhawk's thread; marshal the timer start/stop to the worker, which
+    // owns the timer's window and pump. UpdatePollTimer re-reads pollElevated.
+    if (g_primaryToastHwnd)
+        PostMessageW(g_primaryToastHwnd, WM_APP_UPDATEPOLL, 0, 0);
 }
 
 // --- Windhawk Tool Mod Boilerplate (Do not modify) ---
