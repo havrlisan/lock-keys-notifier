@@ -1028,6 +1028,10 @@ static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& 
 #define POLL_TIMER 3
 #define FADE_TICK_MS 16
 #define POLL_TICK_MS 250
+// Coalescing tolerance: lets Windows batch the poll wakeup with other system
+// timers to cut distinct CPU wakeups (the poll is default-on, so it otherwise
+// fires forever). Costs up to this much extra worst-case detection latency.
+#define POLL_TOLERANCE_MS 100
 
 static HWND CreateToastWindow();
 
@@ -1053,7 +1057,8 @@ static void UpdatePollTimer() {
     LeaveCriticalSection(&g_settingsCs);
     if (want && !g_pollTimerOn) {
         SeedToggleState();
-        SetTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr);
+        SetCoalescableTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr,
+                            POLL_TOLERANCE_MS);
         g_pollTimerOn = true;
     } else if (!want && g_pollTimerOn) {
         KillTimer(g_primaryToastHwnd, POLL_TIMER);

@@ -142,10 +142,13 @@ change there.)
 
 - New timer id `POLL_TIMER` (distinct from `FADE_TIMER` / `HOLD_TIMER`) and constant
   `POLL_TICK_MS = 250`.
-- The poll timer is armed via `UpdatePollTimer()` (worker thread only), which
-  `SetTimer`s only when `pollElevated` is on and `KillTimer`s when it goes off. It
-  runs independent of whether any toast is visible, but **not** when the feature is
-  disabled (see rationale below).
+- The poll timer is armed via `UpdatePollTimer()` (worker thread only), which arms
+  it only when `pollElevated` is on and `KillTimer`s when it goes off. It runs
+  independent of whether any toast is visible, but **not** when the feature is
+  disabled (see rationale below). It uses `SetCoalescableTimer` with a
+  `POLL_TOLERANCE_MS = 100` tolerance so Windows can batch the wakeup with other
+  system timers — the poll is default-on, so this cuts its perpetual power cost at
+  the price of up to ~100 ms extra worst-case detection latency.
 - Handle it in `ToastWndProc`'s `WM_TIMER`, **branching on `wParam == POLL_TIMER`
   before** the per-toast fade/hold lookup (the poll is not toast-specific):
 
