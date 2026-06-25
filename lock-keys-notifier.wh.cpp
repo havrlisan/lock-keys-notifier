@@ -1154,6 +1154,19 @@ void RequestToast(int keyIndex, bool isOn) {
 }
 
 static const int kLockVk[KI_Count] = { VK_CAPITAL, VK_NUMLOCK, VK_SCROLL, VK_INSERT };
+
+// Last toggle state we reported per key. Shared by the hook (event path) and the
+// poll timer (fallback path); ShouldNotify dedups them so a normal toggle, which
+// both may observe, raises exactly one toast.
+static bool g_lastToggle[KI_Count];
+
+static bool ShouldNotify(int ki, bool curOn) {
+    EnterCriticalSection(&g_settingsCs);
+    bool changed = (curOn != g_lastToggle[ki]);
+    if (changed) g_lastToggle[ki] = curOn;
+    LeaveCriticalSection(&g_settingsCs);
+    return changed;
+}
 static HHOOK g_realHook = nullptr;
 
 static bool KeyEnabled(const Settings& s, int ki) {
@@ -1240,6 +1253,11 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     // reads live key state via GetKeyState) only ever runs on this thread.
     g_hookInstalled = (g_realHook != nullptr);
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
+
+    // Seed last-known toggle state so the first poll never fires spuriously.
+    for (int i = 0; i < KI_Count; ++i)
+        g_lastToggle[i] = (GetKeyState(kLockVk[i]) & 1) != 0;
+
     if (g_workerReady) SetEvent(g_workerReady);
 
     // Warm the GDI+ text pipeline on a throwaway thread (see WarmupThreadProc),
