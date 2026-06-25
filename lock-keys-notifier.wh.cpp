@@ -74,6 +74,13 @@ Insert can show a single fixed label in a neutral color instead of ON/OFF:
     Skips the toast while a fullscreen application is in the foreground —
     games (DirectX or borderless), fullscreen video, and presentation mode.
     Focus Assist / Do Not Disturb is not affected.
+- pollElevated: true
+  $name: Detect toggles under elevated apps
+  $description: >-
+    Also polls the lock-key state (about every 250 ms) so a toggle made while an
+    administrator app has focus is still shown — the one case the keyboard hook
+    cannot see. Adds a small detection delay in that case. Caps/Num/Scroll only;
+    Insert cannot be detected under an elevated app.
 - layout: pill
   $name: Layout
   $options:
@@ -367,6 +374,7 @@ enum class SoundMode { None, SystemDefault, Custom };
 struct Settings {
     bool notifyCaps, notifyNum, notifyScroll, notifyInsert;
     bool suppressFullscreen;
+    bool pollElevated;
     int durationMs;
     MonitorTarget monitor;
     Anchor anchor;
@@ -456,6 +464,7 @@ void LoadSettings() {
     s.notifyScroll = Wh_GetIntSetting(L"notifyScrollLock");
     s.notifyInsert = Wh_GetIntSetting(L"notifyInsert");
     s.suppressFullscreen = Wh_GetIntSetting(L"suppressFullscreen");
+    s.pollElevated = Wh_GetIntSetting(L"pollElevated");
     s.durationMs   = Wh_GetIntSetting(L"durationMs");
     s.monitor      = ParseMonitor(GetStr(L"monitor"));
     s.anchor       = ParseAnchor(GetStr(L"positionAnchor"));
