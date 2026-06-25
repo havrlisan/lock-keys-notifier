@@ -520,6 +520,19 @@ using namespace Gdiplus;
 
 enum KeyIndex { KI_Caps, KI_Num, KI_Scroll, KI_Insert, KI_Count };
 
+static const int kLockVk[KI_Count] = { VK_CAPITAL, VK_NUMLOCK, VK_SCROLL, VK_INSERT };
+
+// Last toggle state we reported per key. Shared by the hook (event path) and the
+// poll timer (fallback path); ShouldNotify dedups them so a normal toggle, which
+// both may observe, raises exactly one toast.
+static bool g_lastToggle[KI_Count];
+
+// Defined below with the hook/notify code; the poll-timer branch in ToastWndProc
+// (above their definitions) calls them.
+static bool KeyEnabled(const Settings& s, int ki);
+static bool ShouldNotify(int ki, bool curOn);
+void RequestToast(int keyIndex, bool isOn);
+
 static const wchar_t* kToastClass = L"LockKeysNotifierToast";
 
 struct ToastWindow {
@@ -1008,7 +1021,9 @@ static void PresentToast(ToastWindow& tw, const RECT& workArea, const Settings& 
 
 #define FADE_TIMER 1
 #define HOLD_TIMER 2
+#define POLL_TIMER 3
 #define FADE_TICK_MS 16
+#define POLL_TICK_MS 250
 
 static HWND CreateToastWindow();
 
@@ -1080,6 +1095,19 @@ static LRESULT CALLBACK ToastWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         PostQuitMessage(0);
         return 0;
     case WM_TIMER: {
+        if (wParam == POLL_TIMER) {
+            Settings s;
+            EnterCriticalSection(&g_settingsCs);
+            s = g_settings;
+            LeaveCriticalSection(&g_settingsCs);
+            if (s.pollElevated) {
+                for (int i = 0; i < KI_Count; ++i) {
+                    bool isOn = (GetKeyState(kLockVk[i]) & 1) != 0;
+                    if (KeyEnabled(s, i) && ShouldNotify(i, isOn)) RequestToast(i, isOn);
+                }
+            }
+            return 0;
+        }
         // Find which toast owns this hwnd.
         ToastWindow* tw = nullptr;
         for (auto& t : g_toasts) if (t.hwnd == hwnd) { tw = &t; break; }
@@ -1152,13 +1180,6 @@ void RequestToast(int keyIndex, bool isOn) {
         PostMessageW(g_toasts[0].hwnd, WM_APP_SHOWTOAST, (WPARAM)keyIndex, (LPARAM)isOn);
     }
 }
-
-static const int kLockVk[KI_Count] = { VK_CAPITAL, VK_NUMLOCK, VK_SCROLL, VK_INSERT };
-
-// Last toggle state we reported per key. Shared by the hook (event path) and the
-// poll timer (fallback path); ShouldNotify dedups them so a normal toggle, which
-// both may observe, raises exactly one toast.
-static bool g_lastToggle[KI_Count];
 
 static bool ShouldNotify(int ki, bool curOn) {
     EnterCriticalSection(&g_settingsCs);
@@ -1246,6 +1267,12 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
         tw.hwnd = CreateToastWindow();
     }
     g_primaryToastHwnd = g_toasts.empty() ? nullptr : g_toasts[0].hwnd;
+
+    // Continuous poll fallback: catches Caps/Num/Scroll toggles made while an
+    // elevated app has focus (UIPI hides those from the hook). Runs regardless of
+    // toast visibility; the handler no-ops when the setting is off.
+    if (g_primaryToastHwnd)
+        SetTimer(g_primaryToastHwnd, POLL_TIMER, POLL_TICK_MS, nullptr);
 
     g_realHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInst, 0);
 
