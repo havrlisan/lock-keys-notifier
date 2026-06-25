@@ -109,16 +109,23 @@ Monitored virtual keys: `VK_CAPITAL`, `VK_NUMLOCK`, `VK_SCROLL`, `VK_INSERT`.
   toast window and installs the LL hook. If hook installation fails, log the
   error and return `FALSE` so Windhawk reports the failure.
   - **Cold-start warm-up (added 1.0.1):** after the worker installs the hook and
-    signals ready (so it never delays `Wh_ModInit` or the hook going live), and
-    before entering the message pump, it does **one throwaway off-screen
-    `RenderToast`** into a scratch window, then frees it. The first GDI+ text
-    render pays a one-time lazy cost — font enumeration, loading the configured
-    family, spinning up the GDI+ text subsystem and its DLLs — which on a **cold
-    boot** (cold disk) can be several seconds. Warming up here moves that cost off
-    the first key press; a key pressed mid-warm-up just queues until the pump
-    starts. It only manifested on cold boot, not disable/enable, because the OS
-    font/DLL caches stay warm across an enable cycle. (Issue
+    signals ready, it spawns a **throwaway warm-up thread** that does **one
+    off-screen `RenderToast`** into a scratch DIB, then frees it. The first GDI+
+    text render pays a one-time lazy cost — font enumeration, loading the
+    configured family, spinning up the GDI+ text subsystem and its DLLs — which on
+    a **cold boot** (cold disk) can be several seconds. Warming it moves that cost
+    off the first key press. It only manifested on cold boot, not disable/enable,
+    because the OS font/DLL caches stay warm across an enable cycle. (Issue
     [#4555](https://github.com/ramensoftware/windhawk-mods/issues/4555).)
+    - **Why a separate thread (refined post-review):** the worker thread owns the
+      `WH_KEYBOARD_LL` hook and must keep pumping messages, or every system-wide
+      keystroke stalls on the `LowLevelHooksTimeout` (~300 ms) until the hook
+      returns — a multi-second warm-up there would degrade global keyboard input
+      on every boot. GDI+ is initialized per-process and the caches it warms are
+      process-wide, so warming on any thread benefits the worker's first real
+      render. The worker joins the warm-up thread before `GdiplusShutdown` so it
+      can't draw post-teardown, and skips spawning it entirely when no `notify*`
+      key is enabled (nothing would ever render).
 - **`Wh_ModSettingsChanged`** — reload settings into a struct guarded by a
   `CRITICAL_SECTION`; applied on the next toast. No live preview.
 - **`Wh_ModUninit`** — signal the worker thread to unhook, destroy the window(s),

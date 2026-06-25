@@ -1184,6 +1184,27 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
+// Pre-warm the GDI+ text/font pipeline on a throwaway thread. The first
+// RenderToast pays a one-time lazy cost — font enumeration, loading the
+// configured family, spinning up the GDI+ text subsystem and pulling in its
+// DLLs — which on a cold boot (cold disk) can be several seconds. GDI+ is
+// initialized per-process and the caches it warms are process-wide, so warming
+// on any thread benefits the worker's first real RenderToast. Crucially this
+// runs OFF the worker thread: that thread owns the WH_KEYBOARD_LL hook and must
+// keep pumping messages, or every system-wide keystroke stalls on the
+// LowLevelHooksTimeout until the hook returns. Renders into a scratch DIB and
+// discards it; nothing is presented.
+static DWORD WINAPI WarmupThreadProc(LPVOID) {
+    Settings s;
+    EnterCriticalSection(&g_settingsCs);
+    s = g_settings;
+    LeaveCriticalSection(&g_settingsCs);
+    ToastWindow warm;
+    RenderToast(warm, s, KI_Caps, true, 96);
+    if (warm.dib) DeleteObject(warm.dib);
+    return 0;
+}
+
 static DWORD WINAPI WorkerThreadProc(LPVOID) {
     GdiplusStartupInput gsi;
     GdiplusStartup(&g_gdiplusToken, &gsi, nullptr);
@@ -1212,22 +1233,18 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     if (!g_realHook) Wh_Log(L"keyboard hook install failed");
     if (g_workerReady) SetEvent(g_workerReady);
 
-    // Pre-warm the GDI+ text/font pipeline. The first RenderToast pays a one-time
-    // lazy cost — font enumeration, loading the configured family, spinning up the
-    // GDI+ text subsystem and pulling in its DLLs — which on a cold boot (cold disk)
-    // can be several seconds. Paying it here, after signaling ready (so it never
-    // delays ModInit or the hook going live) and before the pump, moves that cost
-    // off the first key press. A key pressed during this brief warm-up just queues
-    // and is handled once the pump starts. Render into a scratch window and discard
-    // it; nothing is presented.
+    // Warm the GDI+ text pipeline on a throwaway thread (see WarmupThreadProc),
+    // off this hook-owning thread so the pump stays responsive immediately. Skip
+    // it entirely when no key notifies — nothing will ever render. Joined before
+    // GdiplusShutdown below so it can't touch GDI+ after teardown.
+    HANDLE warmThread = nullptr;
     {
         Settings s;
         EnterCriticalSection(&g_settingsCs);
         s = g_settings;
         LeaveCriticalSection(&g_settingsCs);
-        ToastWindow warm;
-        RenderToast(warm, s, KI_Caps, true, 96);
-        if (warm.dib) DeleteObject(warm.dib);
+        if (s.notifyCaps || s.notifyNum || s.notifyScroll || s.notifyInsert)
+            warmThread = CreateThread(nullptr, 0, WarmupThreadProc, nullptr, 0, nullptr);
     }
 
     MSG msg;
@@ -1245,6 +1262,8 @@ static DWORD WINAPI WorkerThreadProc(LPVOID) {
     g_toasts.clear();
     g_primaryToastHwnd = nullptr;
     UnregisterClassW(kToastClass, hInst);
+    // Join the warm-up before tearing down GDI+ so it can't draw post-shutdown.
+    if (warmThread) { WaitForSingleObject(warmThread, INFINITE); CloseHandle(warmThread); }
     GdiplusShutdown(g_gdiplusToken);
     return 0;
 }
