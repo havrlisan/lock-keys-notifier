@@ -2,7 +2,7 @@
 // @id              lock-keys-notifier
 // @name            Lock Keys Notifier
 // @description     Shows a customizable toast when a lock key (Caps/Num/Scroll/Insert) is toggled
-// @version         1.0.1
+// @version         1.1.0
 // @author          Havrlisan
 // @github          https://github.com/havrlisan
 // @homepage        https://github.com/havrlisan/lock-keys-notifier
